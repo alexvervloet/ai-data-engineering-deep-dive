@@ -1,4 +1,21 @@
-"""Domain records shared by connectors, transforms, and index backends."""
+"""Domain records shared by connectors, transforms, and index backends.
+
+Every record here is frozen. That is not tidiness, it is the property the rest of the
+pipeline is built on: a document that cannot be mutated in place can be replaced only
+by writing a new version, so "which version is this?" always has an answer, and a
+retry can be compared against what is already stored instead of overwriting it blind.
+
+Read the types as a chain of custody. A `SourceRecord` is what the source system says
+is true, at a version the source assigned. A `ParsedDocument` adds text and the parser
+that produced it. A `Chunk` adds position, and carries the ACL and source version down
+with it. An `IndexedChunk` adds the vector and the model that made it. A `LineageEdge`
+records which parent produced which child, and by which transform.
+
+Two fields travel the entire chain on purpose. The ACL travels because authorization
+is a property of the data, not a filter someone remembers to apply at query time. The
+source version travels because it is the only thing that can decide, later and out of
+order, whether an arriving event is news or an echo.
+"""
 
 from __future__ import annotations
 

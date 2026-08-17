@@ -1,4 +1,27 @@
-"""Runtime contracts at the untrusted connector boundary."""
+"""Runtime contracts at the untrusted connector boundary.
+
+A type hint is a note to the next programmer. A schema in a design document is a note
+to another team. Neither runs, so neither is a contract. This module is where the
+promise gets checked against the bytes that actually arrived, at the one moment when
+rejecting them is still cheap.
+
+The rules worth knowing beyond the code itself:
+
+Unknown fields are an error, not something to ignore. A field the pipeline silently
+drops is a field the sending team believes is being honored. When it turns out not to
+be, the evidence is a document that has quietly been wrong for months.
+
+Timestamps carry an offset or they are refused. "9 a.m." is not a time, and a backfill
+that sorts on ambiguous timestamps reorders history without telling anyone.
+
+An empty ACL denies. Treating it as public is the single-character difference between
+a document nobody can read and a document everybody can, and only one of those
+mistakes is recoverable.
+
+Authorization is derived from trusted context, never from the payload. If a tenant can
+arrive in a message, then anything that can write a message, including a model with a
+tool, can choose a tenant.
+"""
 
 from __future__ import annotations
 

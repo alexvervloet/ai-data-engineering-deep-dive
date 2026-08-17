@@ -1,4 +1,24 @@
-"""Connector semantics: consistent snapshots followed by ordered change events."""
+"""Connector semantics: consistent snapshots followed by ordered change events.
+
+A first crawl and an incremental feed look like two features. They are one protocol,
+and the seam between them is where corpora quietly go wrong:
+
+1. capture the source high-watermark;
+2. read a snapshot at that same logical instant;
+3. consume changes strictly after the watermark;
+4. persist the new cursor only after the index write commits.
+
+Get step 3 wrong in one direction and documents are processed twice, which costs money
+and is otherwise harmless. Get it wrong in the other and the documents that changed
+during the crawl are never seen again, by anything, until someone notices the answer
+is out of date. The asymmetry is why the safe default is to overlap and rely on
+idempotent writes rather than to trim the window.
+
+`MemoryConnector` uses integer cursors so the arithmetic is visible in the lessons.
+Treat a real provider's cursor as an opaque token: it may be a timestamp, a log
+sequence number, a page token, or a blob of vendor JSON, and the moment code does
+arithmetic on it, it has taken a dependency the provider never offered.
+"""
 
 from __future__ import annotations
 
