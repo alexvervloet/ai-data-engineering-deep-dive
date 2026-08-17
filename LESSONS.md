@@ -36,3 +36,12 @@
   insert v1 and was correctly rejected as stale, making the test order-dependent.
 - **Next time:** give integration fixtures a dedicated tenant and remove only that
   tenant's rows before and after the test. Run the test twice during verification.
+
+## Verify API authentication before building a new remote repository
+
+- **Expected:** the existing GitHub setup that pushes curriculum repositories over
+  SSH would also let `gh repo create` publish this new module.
+- **Actual:** SSH access was available, but the GitHub CLI's API token was invalid;
+  Git can push an existing repository but cannot create the missing remote.
+- **Next time:** run `gh auth status` before starting a new-repository task and
+  create the empty remote early, while keeping the first push gated on green tests.
