@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import unittest
 from datetime import datetime, timezone
@@ -13,7 +14,12 @@ from ai_data.models import AccessControl, SourceRecord
 from ai_data.pipeline import SyncPipeline
 from ai_data.quality import assess_quality
 from ai_data.reconcile import reconcile
-from ai_data.recovery import BackupCorrupt, create_backup, restore_backup
+from ai_data.recovery import (
+    BackupCorrupt,
+    BackupIncompatible,
+    create_backup,
+    restore_backup,
+)
 
 
 def source(
@@ -300,6 +306,26 @@ class PipelineTests(unittest.TestCase):
         envelope = json.loads(serialized)
         envelope["body"]["records"][0]["content_base64"] = "dGFtcGVyZWQ="
         with self.assertRaises(BackupCorrupt):
+            restore_backup(json.dumps(envelope))
+
+    def test_a_restore_that_no_longer_meets_the_contract_is_not_corruption(self) -> None:
+        """Intact bytes, moved contract. Different diagnosis, different repair.
+
+        Backups outlive the code that wrote them. A MIME type that was allowed last
+        year, an ACL convention since tightened, a field that became required: the
+        checksum still matches and the data is still wrong for today's pipeline.
+        Reporting that as corruption sends the on-call engineer hunting for a
+        healthier copy of a file that is perfectly healthy.
+        """
+
+        serialized = create_backup((source("guide"),), cdc_cursor=1)
+        envelope = json.loads(serialized)
+        envelope["body"]["records"][0]["readers"] = []
+        envelope["sha256"] = hashlib.sha256(
+            json.dumps(envelope["body"], sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+
+        with self.assertRaisesRegex(BackupIncompatible, "readers"):
             restore_backup(json.dumps(envelope))
 
 

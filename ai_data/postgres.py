@@ -118,7 +118,8 @@ class PostgresSyncReport:
     tenant_id: str
     external_id: str
     source_version: int
-    chunks_written: int
+    chunks_written: int = 0
+    chunks_removed: int = 0
 
 
 def _vector_literal(values: tuple[float, ...]) -> str:
@@ -231,7 +232,7 @@ class PostgresCatalog:
             ).fetchone()
             if updated is None:
                 return PostgresSyncReport(
-                    "stale", record.tenant_id, record.external_id, record.version, 0
+                    "stale", record.tenant_id, record.external_id, record.version
                 )
 
             self.connection.execute(
@@ -262,7 +263,11 @@ class PostgresCatalog:
                     ),
                 )
         return PostgresSyncReport(
-            "indexed", record.tenant_id, record.external_id, record.version, len(result.chunks)
+            "indexed",
+            record.tenant_id,
+            record.external_id,
+            record.version,
+            chunks_written=len(result.chunks),
         )
 
     def delete_document(
@@ -285,7 +290,7 @@ class PostgresCatalog:
                 (tenant_id, document_id, external_id, version),
             ).fetchone()
             if updated is None:
-                return PostgresSyncReport("stale", tenant_id, external_id, version, 0)
+                return PostgresSyncReport("stale", tenant_id, external_id, version)
             removed = self.connection.execute(
                 """
                 DELETE FROM ai_chunks
@@ -295,7 +300,7 @@ class PostgresCatalog:
                 (tenant_id, document_id),
             ).fetchall()
         return PostgresSyncReport(
-            "deleted", tenant_id, external_id, version, -len(removed)
+            "deleted", tenant_id, external_id, version, chunks_removed=len(removed)
         )
 
     def search(
