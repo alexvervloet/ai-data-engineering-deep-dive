@@ -18,6 +18,41 @@
 - **Next time:** require strictly newer versions for ordinary source events. Permit
   equal-version replacement only behind an explicit, controlled backfill mode.
 
+## The exception carved out for backfills carried the same bug
+
+- **Expected:** the fix above had closed tombstone resurrection, because ordinary
+  events now require a strictly newer version.
+- **Actual:** the backfill mode created by that fix kept the old comparison, so a
+  transform migration rerun at the deleted version cleared `deleted_at` again. The
+  same defect, one layer down, hiding inside the legitimate exception to the rule.
+- **Next time:** when a rule gets an exception, re-test the original failure against
+  the exception. Write the invariant as one predicate used by every path, rather than
+  as a comparison operator chosen per call site.
+
+## A row-level security policy can be correct and enforce nothing
+
+- **Expected:** enabling row-level security on the chunk table and writing a tenant
+  and ACL policy gave the capstone a real second layer behind its query predicates.
+- **Actual:** it enforced nothing. Postgres exempts a table's owner from that table's
+  policies unless the table is declared `FORCE ROW LEVEL SECURITY`, and the capstone
+  connects as the owner that ran the migrations. A probe with the wrong tenant and no
+  query predicates read every chunk in every tenant.
+- **Next time:** test that a control denies something, never only that it exists. For
+  row-level security specifically, run reads as a role that owns nothing, and keep a
+  test asserting the owner bypass so the exemption stays visible.
+
+## Claiming a Python floor means compiling against it
+
+- **Expected:** code written and tested on 3.13 would satisfy the declared
+  `requires-python = ">=3.11"`, since nothing used a recent library feature.
+- **Actual:** a nested f-string containing an escape is a syntax error before 3.12,
+  so the package did not import at all on the oldest supported version. CI caught it
+  on the 3.11 leg and the failure sat on `main`, because the local run was green.
+- **Next time:** treat a red CI leg as blocking even when it is the older-version
+  matrix entry, and compile against the declared floor locally
+  (`docker run --rm -v "$PWD":/w -w /w python:3.11-slim python -m compileall -q .`)
+  before claiming support for it.
+
 ## Postgres 18 changed the container data mount
 
 - **Expected:** the long-standing `/var/lib/postgresql/data` volume mount would
