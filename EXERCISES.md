@@ -54,6 +54,12 @@ python examples/03_parsing_and_ocr.py
 - Change `PARSER_VERSION` without changing output. Should the corpus be backfilled?
 - Change normalization so CRLF and LF hash differently. What unnecessary work does
   that create?
+- Add a `<script>` block to the HTML fixture whose body reads like an instruction to
+  an assistant. Confirm it is not in the parsed text, then remove `script` from
+  `_NON_CONTENT` and confirm it is. Name the two separate costs of indexing it.
+- Give the HTML an unclosed `<script>` tag before the body text. Explain why the run
+  now fails rather than indexing a truncated document, and why that is the right
+  outcome.
 
 ## 4. Deduplication and provenance
 
@@ -110,6 +116,11 @@ python examples/07_batches_and_backfills.py
 - Make one chunk exceed `max_tokens`. Decide whether to truncate, rechunk, dead-letter,
   or fail the entire document.
 - Change the embedding model name and rerun the backfill. Why must the cache miss?
+- Delete a document, then run a backfill whose snapshot still contains it at the
+  deleted version. Predict the status first. Then edit `InMemoryCatalog._may_replace`
+  to drop its `not previous.deleted` clause and run it again. You have just
+  reintroduced a bug this repository shipped twice; write the one-sentence rule that
+  prevents both versions of it.
 
 ## 8. Deletes and reconciliation
 
@@ -138,6 +149,10 @@ python examples/09_lineage_and_quality.py
 - Duplicate half the chunks. The duplicate check is non-critical here; decide when
   it should block a production release.
 - Add a metric for parser failures by MIME type and owner.
+- Remove a document from `catalog.documents` while leaving its chunks in place, then
+  run the gate. It reports a failure rather than raising, because it used to raise on
+  exactly the state the reconciler exists to find. Explain what an operator sees when
+  a gate crashes instead of failing, and why that is worse than either outcome.
 
 ## 10. Disaster recovery
 
@@ -186,6 +201,24 @@ Complete these changes one at a time:
 7. Run the integration test with `AI_DATA_TEST_DATABASE_URL` set.
 8. Inspect `EXPLAIN (ANALYZE, BUFFERS)` for a tenant-filtered query at larger scale.
    Compare exact recall with HNSW recall before tuning `ef_search`.
+9. Prove the second layer is real, and then prove it can be inert. Open `psql`
+   against the container and run the query an application writes by accident, with no
+   tenant or ACL predicates at all:
+
+   ```sql
+   BEGIN;
+   SET LOCAL ROLE ai_data_reader;
+   SELECT set_config('app.tenant_id', 'beta', true);
+   SELECT set_config('app.principals', 'user:mallory', true);
+   SELECT tenant_id, chunk_id FROM ai_chunks;   -- policy answers: no rows
+   ROLLBACK;
+   ```
+
+   Now run the same block without the `SET LOCAL ROLE` line. Every chunk in every
+   tenant comes back, because the connection owns the table and Postgres exempts a
+   table's owner from its policies. Write down what a code review would have to check
+   to catch that, then decide whether your production application connects as the role
+   that ran its migrations.
 
 When finished, restore the sample manifest and stop the service:
 
