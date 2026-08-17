@@ -17,3 +17,13 @@
   `deleted_at` and resurrect a tombstoned document.
 - **Next time:** require strictly newer versions for ordinary source events. Permit
   equal-version replacement only behind an explicit, controlled backfill mode.
+
+## Postgres 18 changed the container data mount
+
+- **Expected:** the long-standing `/var/lib/postgresql/data` volume mount would
+  initialize the pinned Postgres 18 pgvector image.
+- **Actual:** the container exited immediately. Postgres 18 images store data in a
+  major-version-specific directory and require the volume at `/var/lib/postgresql`
+  so `pg_upgrade --link` can work without crossing a mount boundary.
+- **Next time:** validate compose files against the pinned database major version;
+  for Postgres 18+, mount the parent `/var/lib/postgresql` directory.
