@@ -1,4 +1,18 @@
-"""A small, real Postgres/pgvector backend for the capstone."""
+"""A small, real Postgres/pgvector backend for the capstone.
+
+Three layers guard a read here, and they are deliberately not redundant:
+
+1. the application query filters on tenant and ACL before ranking;
+2. the reader role holds `SELECT` on chunks and nothing else, so a bug cannot reach
+   the document table, let alone write;
+3. row-level security re-checks tenant and ACL inside the database.
+
+Layer 3 only works because searches run as a role that does not own the tables.
+Postgres exempts a table's owner from its own policies unless the table is declared
+`FORCE ROW LEVEL SECURITY`, so an application that connects as the owner, which is
+the default for anything created by a migration, gets a policy that is syntactically
+present and functionally inert. `RLS_DEMONSTRATION` and its tests show both halves.
+"""
 
 from __future__ import annotations
 
@@ -11,6 +25,10 @@ from .models import SourceRecord
 from .parsing import parse_document
 
 VECTOR_DIMENSIONS = 16
+
+# Searches switch to this role for the duration of the query. It owns nothing, so the
+# policy below actually applies to it, and it holds SELECT on the chunk table only.
+READER_ROLE = "ai_data_reader"
 
 SCHEMA_STATEMENTS = (
     "CREATE EXTENSION IF NOT EXISTS vector",
@@ -56,6 +74,18 @@ SCHEMA_STATEMENTS = (
     CREATE INDEX IF NOT EXISTS ai_chunks_embedding_hnsw_idx
     ON ai_chunks USING hnsw (embedding vector_cosine_ops)
     """,
+    """
+    DO $$
+    BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ai_data_reader') THEN
+            CREATE ROLE ai_data_reader NOLOGIN;
+        END IF;
+        EXECUTE format('GRANT ai_data_reader TO %I', current_user);
+    END
+    $$
+    """,
+    "GRANT USAGE ON SCHEMA public TO ai_data_reader",
+    "GRANT SELECT ON ai_chunks TO ai_data_reader",
     "ALTER TABLE ai_chunks ENABLE ROW LEVEL SECURITY",
     "DROP POLICY IF EXISTS ai_chunks_reader_policy ON ai_chunks",
     """
@@ -67,6 +97,19 @@ SCHEMA_STATEMENTS = (
     )
     """,
 )
+
+RLS_DEMONSTRATION = """
+Row-level security protects the reader role, not the owner.
+
+    SET LOCAL ROLE ai_data_reader;
+    SELECT set_config('app.tenant_id', 'acme', true);
+    SELECT set_config('app.principals', 'user:alex', true);
+    SELECT tenant_id, chunk_id FROM ai_chunks;   -- only Acme rows Alex may read
+
+Run the same three statements without the SET LOCAL ROLE and every row in every
+tenant comes back, because the connection owns the table. That is the failure mode
+worth remembering: a policy can be present, correct, and doing nothing.
+"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -274,7 +317,12 @@ class PostgresCatalog:
                 "SELECT set_config('app.principals', %s, true)",
                 (",".join(readers),),
             )
+            # Approximate scans stop early once they have enough candidates, which for a
+            # filtered query can be too few authorized ones. Iterative scan keeps going.
             self.connection.execute("SET LOCAL hnsw.iterative_scan = strict_order")
+            # Drop to the unprivileged role for the read. Both SET LOCALs and the role
+            # revert when this transaction ends, so the next write runs as the owner.
+            self.connection.execute(f"SET LOCAL ROLE {READER_ROLE}")
             rows = self.connection.execute(
                 """
                 SELECT chunk_id, content, embedding <=> %s::vector AS distance
