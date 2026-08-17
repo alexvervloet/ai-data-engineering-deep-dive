@@ -122,6 +122,46 @@ class PipelineTests(unittest.TestCase):
         self.assertTrue(catalog.documents[("acme", "guide")].deleted)
         self.assertFalse(catalog.entries)
 
+    def test_backfill_may_rewrite_a_live_document_at_the_same_version(self) -> None:
+        catalog = InMemoryCatalog()
+        embedder = DeterministicEmbedder()
+        catalog.upsert(source("guide"), embedder)
+
+        report = catalog.upsert(source("guide"), embedder, force=True, max_chars=50)
+
+        self.assertEqual(report.status, "backfilled")
+        self.assertTrue(catalog.entries)
+
+    def test_backfill_may_not_resurrect_a_tombstoned_document(self) -> None:
+        """A migration rerun must not undo a delete it happens to run alongside.
+
+        Backfills read the current source snapshot, which was captured before or around
+        the delete. Allowing an equal version to clear `deleted_at` would let a routine
+        transform migration silently republish content the source removed.
+        """
+
+        catalog = InMemoryCatalog()
+        embedder = DeterministicEmbedder()
+        catalog.upsert(source("guide"), embedder)
+        catalog.delete("acme", "guide", 2)
+
+        replay = catalog.upsert(source("guide", version=2), embedder, force=True)
+
+        self.assertEqual(replay.status, "stale")
+        self.assertTrue(catalog.documents[("acme", "guide")].deleted)
+        self.assertFalse(catalog.entries)
+
+    def test_a_strictly_newer_source_event_does_lift_a_tombstone(self) -> None:
+        catalog = InMemoryCatalog()
+        embedder = DeterministicEmbedder()
+        catalog.upsert(source("guide"), embedder)
+        catalog.delete("acme", "guide", 2)
+
+        revived = catalog.upsert(source("guide", version=3), embedder)
+
+        self.assertEqual(revived.status, "updated")
+        self.assertFalse(catalog.documents[("acme", "guide")].deleted)
+
     def test_search_enforces_tenant_and_acl_before_ranking(self) -> None:
         catalog = InMemoryCatalog()
         embedder = DeterministicEmbedder()

@@ -55,6 +55,30 @@ class SearchHit:
 class InMemoryCatalog:
     """Reference behavior for a real transactional index backend."""
 
+    @staticmethod
+    def _may_replace(previous: DocumentState, version: int, force: bool) -> bool:
+        """Decide whether an arriving version may overwrite what is already indexed.
+
+        Ordinary source events must be strictly newer, which is what makes an
+        at-least-once delivery safe to replay: the second copy of an event finds its
+        own version already recorded and does nothing.
+
+        Backfill mode relaxes that for one specific job. After a parser, chunker, or
+        embedding-model change the source has not changed, so re-deriving a document
+        at its existing version is the whole point. It stays a deliberate, operator-run
+        mode rather than the default, because a pipeline that accepts equal versions by
+        default cannot tell a migration from a duplicate delivery.
+
+        A tombstone is never lifted this way. A delete is a source fact with a version
+        of its own, so only a strictly newer source event may bring a document back.
+        Letting a backfill clear it would resurrect deleted content from the same stale
+        snapshot the operator is rebuilding from.
+        """
+
+        if version > previous.source_version:
+            return True
+        return force and version == previous.source_version and not previous.deleted
+
     def __init__(self) -> None:
         self.documents: dict[tuple[str, str], DocumentState] = {}
         self.entries: dict[tuple[str, str], IndexedChunk] = {}
@@ -75,9 +99,7 @@ class InMemoryCatalog:
         validate_source(record)
         key = (record.tenant_id, record.external_id)
         previous = self.documents.get(key)
-        stale_version = previous is not None and record.version < previous.source_version
-        same_version = previous is not None and record.version == previous.source_version
-        if stale_version or (same_version and not force):
+        if previous is not None and not self._may_replace(previous, record.version, force):
             return SyncReport(
                 "stale",
                 record.tenant_id,

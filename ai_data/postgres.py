@@ -145,7 +145,17 @@ class PostgresCatalog:
                 for chunk, vector in zip(batch.chunks, batch_vectors, strict=True)
             )
 
-        version_comparison = "<=" if force else "<"
+        # The same rule the in-memory catalog documents, expressed as the WHERE clause
+        # of the upsert so the database enforces it under concurrency. An ordinary
+        # event must be strictly newer. A backfill may also rewrite a live document at
+        # its existing version, but never a deleted one: clearing a tombstone requires
+        # a strictly newer source event, not a rerun of an old snapshot.
+        version_guard = "ai_documents.source_version < EXCLUDED.source_version"
+        if force:
+            version_guard += (
+                " OR (ai_documents.source_version = EXCLUDED.source_version"
+                " AND ai_documents.deleted_at IS NULL)"
+            )
         with self.connection.transaction():
             updated = self.connection.execute(
                 f"""
@@ -161,7 +171,7 @@ class PostgresCatalog:
                     parser_version = EXCLUDED.parser_version,
                     updated_at = EXCLUDED.updated_at,
                     deleted_at = NULL
-                WHERE ai_documents.source_version {version_comparison} EXCLUDED.source_version
+                WHERE {version_guard}
                 RETURNING source_version
                 """,
                 (
