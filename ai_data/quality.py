@@ -1,4 +1,14 @@
-"""Data-quality gates that fail a pipeline before retrieval quality degrades."""
+"""Data-quality gates that fail a pipeline before retrieval quality degrades.
+
+Retrieval evals answer "did the right chunk rank first?" They cannot answer "is this
+corpus current, complete, and authorized?", because a stale or over-shared corpus can
+score perfectly against a stale eval set. These checks run earlier and answer that.
+
+Two design rules hold the file together. Each check measures one thing, so a failure
+names the stage that broke instead of announcing that something, somewhere, is wrong.
+And each check tolerates the state it is looking for: a gate that raises on corrupt
+data is a gate that stops reporting exactly when the pipeline needs it most.
+"""
 
 from __future__ import annotations
 
@@ -41,13 +51,18 @@ def assess_quality(
         and not state.deleted
     )
     coverage = indexed_count / expected_count if expected_count else 1.0
-    acl_mismatches = sum(
-        entry.chunk.acl
-        != catalog.documents[
-            (entry.chunk.tenant_id, entry.chunk.external_id)
-        ].acl
-        for entry in entries
-    )
+    # A gate that raises cannot fail a release, it can only crash the job that was
+    # supposed to decide. Every lookup here tolerates the broken state it is checking
+    # for: an indexed chunk whose document row is gone has no authoritative ACL to
+    # compare against, so it is counted as its own failure rather than raising.
+    acl_mismatches = 0
+    unowned_chunks = 0
+    for entry in entries:
+        state = catalog.documents.get((entry.chunk.tenant_id, entry.chunk.external_id))
+        if state is None:
+            unowned_chunks += 1
+        elif entry.chunk.acl != state.acl:
+            acl_mismatches += 1
     empty_chunks = sum(not entry.chunk.text.strip() for entry in entries)
     lineage_coverage = (
         sum(entry.chunk.chunk_id in catalog.lineage for entry in entries) / len(entries)
@@ -67,6 +82,12 @@ def assess_quality(
             QualityCheck("empty chunks", empty_chunks == 0, float(empty_chunks), "equals 0"),
             QualityCheck(
                 "ACL propagation", acl_mismatches == 0, float(acl_mismatches), "equals 0"
+            ),
+            QualityCheck(
+                "chunks have an owning document",
+                unowned_chunks == 0,
+                float(unowned_chunks),
+                "equals 0",
             ),
             QualityCheck(
                 "lineage coverage", lineage_coverage == 1.0, lineage_coverage, "equals 1.0"

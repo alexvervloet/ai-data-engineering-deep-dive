@@ -240,6 +240,28 @@ class PipelineTests(unittest.TestCase):
         self.assertIn("missing_chunks", {finding.kind for finding in findings})
         self.assertFalse(report.ok)
 
+    def test_quality_gate_fails_instead_of_raising_on_a_chunk_with_no_document(
+        self,
+    ) -> None:
+        """The gate has to survive the corruption it exists to detect.
+
+        `reconcile` already reports this state as a dangling chunk, so it is a state the
+        pipeline expects to meet. Reading the chunk's ACL through its missing document
+        row used to raise KeyError, which turned a failed release into a failed job.
+        """
+
+        catalog = InMemoryCatalog()
+        embedder = DeterministicEmbedder()
+        record = source("guide")
+        catalog.upsert(record, embedder)
+        catalog.documents.pop(("acme", "guide"))
+
+        report = assess_quality((record,), catalog)
+
+        self.assertFalse(report.ok)
+        failed = {check.name for check in report.checks if not check.passed}
+        self.assertIn("chunks have an owning document", failed)
+
     def test_embedding_batches_respect_item_limits(self) -> None:
         catalog = InMemoryCatalog()
         embedder = DeterministicEmbedder()
