@@ -47,12 +47,11 @@ def plan_batches(
 class DeterministicEmbedder:
     """A local replacement that preserves batching and cache behavior, not semantics."""
 
-    model = "deterministic-hash-v1"
-
     def __init__(self, dimensions: int = 16) -> None:
         if dimensions < 2:
             raise ValueError("dimensions must be at least 2")
         self.dimensions = dimensions
+        self.model = f"deterministic-hash-v1-{dimensions}d"
         self.calls = 0
 
     def embed(self, texts: tuple[str, ...]) -> tuple[tuple[float, ...], ...]:
