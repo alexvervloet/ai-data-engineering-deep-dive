@@ -1,0 +1,64 @@
+name: verify
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  offline:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python check_setup.py
+      - run: python -m compileall -q ai_data examples hands_on tests
+      - run: python -m unittest discover -v
+      - name: Run every offline lesson
+        run: |
+          for example in examples/[0-9][0-9]_*.py; do
+            python "$example"
+          done
+      - run: python hands_on/sync_corpus.py
+
+  postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.6-pg18
+        env:
+          POSTGRES_DB: ai_data
+          POSTGRES_USER: ai_data
+          POSTGRES_PASSWORD: ai_data_local_only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ai_data -d ai_data"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: pip install -r requirements-postgres.txt
+      - name: Run the pgvector integration test
+        env:
+          AI_DATA_TEST_DATABASE_URL: postgresql://ai_data:ai_data_local_only@localhost:5432/ai_data
+        run: python -m unittest tests.test_postgres.PostgresIntegrationTests -v
+      - name: Run the live capstone
+        run: >-
+          python hands_on/sync_corpus.py
+          --database-url postgresql://ai_data:ai_data_local_only@localhost:5432/ai_data
