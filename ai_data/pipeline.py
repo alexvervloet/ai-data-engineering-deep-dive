@@ -1,4 +1,26 @@
-"""Snapshot, CDC, checkpoint, and backfill orchestration."""
+"""Snapshot, CDC, checkpoint, and backfill orchestration.
+
+Three jobs share one set of rules here, and the difference between them is worth
+naming, because production teams routinely build the first and discover the other two
+by incident.
+
+`bootstrap` reads the source once and records the watermark it read at. `poll` applies
+changes after the cursor and advances it. `backfill` re-derives current source state
+after the code changed rather than the data, and it is the only mode allowed to rewrite
+a document at its existing version.
+
+The critical line in the whole module is the order of two operations: apply the change,
+then persist the cursor. Reversed, a crash between them skips events forever, and
+nothing reports it. In this order a crash replays events that were already applied, and
+because the catalog compares versions, replay is a no-op. That is the practical shape
+of exactly-once processing: at-least-once delivery plus effects that can be repeated
+without changing the answer.
+
+What this class deliberately does not have is concurrency. Workers, queues, and
+parallel batches all multiply throughput and they also multiply whatever ordering bugs
+already exist. Get idempotency, version comparison, and transactional replacement
+tested first. Parallelizing an unsafe lifecycle only makes the corruption arrive sooner.
+"""
 
 from __future__ import annotations
 

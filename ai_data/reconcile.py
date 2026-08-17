@@ -1,4 +1,24 @@
-"""Detect drift between authoritative source state and the retrieval index."""
+"""Detect drift between authoritative source state and the retrieval index.
+
+Every other module assumes events arrive and get applied. Reconciliation assumes the
+opposite: that over a long enough window, some event was missed. A webhook was dropped
+during a deploy, a cursor was rolled back by a restore, a connector was down longer
+than the provider's change retention. None of these produce an error at the time. They
+produce a corpus that is subtly wrong, indefinitely, and the wrongest possible outcome
+is a deleted document that is still being retrieved and quoted.
+
+So the index is compared against source truth on a schedule, and the comparison is
+two-directional. Walking the source finds documents that are absent, stale, or whose
+ACL no longer matches. Walking the index finds documents the source no longer has, and
+chunks whose document is gone.
+
+One warning about repair, which is where reconciliation turns dangerous. Findings are
+computed against a source snapshot, and a snapshot taken while the source API was
+half-degraded looks exactly like a source that deleted a great many documents. Repair
+should be bounded and observable: a budget on how much one run may remove, and an alert
+when it is hit. "Delete everything I did not see" is a correct-looking rule that
+empties a tenant the first time a connector has a bad afternoon.
+"""
 
 from __future__ import annotations
 

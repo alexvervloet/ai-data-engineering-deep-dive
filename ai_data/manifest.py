@@ -1,4 +1,24 @@
-"""A strict filesystem connector for the capstone corpus manifest."""
+"""A strict filesystem connector for the capstone corpus manifest.
+
+The manifest plays the part a SaaS connector plays in production: it is the source of
+truth for what exists, what version it is at, and who may read it. Writing it as files
+plus a JSON index keeps the capstone runnable with no accounts and no network, while
+leaving the interesting semantics intact.
+
+It is strict on purpose, because a corpus definition is a security boundary. Paths are
+resolved and required to stay inside the corpus directory, so a manifest cannot reach
+into the filesystem. Tenants must be declared in `managed_tenants`, which is what makes
+"this document is gone" distinguishable from "this tenant was never mine to sync",
+the distinction the reconciliation step depends on before it tombstones anything.
+Identities must be unique, and every record still passes the same contract validation a
+network payload would.
+
+The one thing a filesystem cannot supply is a version, so the manifest states it. That
+is not a simplification to apologize for: it is exactly the position you are in with
+any source that does not version its own documents, and it forces the question early.
+Something has to decide what counts as a meaningful change, and if the source will not,
+the pipeline must, before it can tell an edit from an echo.
+"""
 
 from __future__ import annotations
 

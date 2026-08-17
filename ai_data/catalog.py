@@ -1,4 +1,28 @@
-"""An atomic, tenant-aware index lifecycle used by the offline lessons."""
+"""An atomic, tenant-aware index lifecycle used by the offline lessons.
+
+This is the reference implementation of the semantics `postgres.py` then has to
+reproduce against a real database. Keeping both lets the lessons run with no service
+installed, and it makes the semantics explicit rather than accidental: anything the
+in-memory version does that the SQL version does not is a bug in one of them.
+
+Two properties matter more than the data structures:
+
+**Replacement is atomic.** New chunks are embedded and staged before any visible state
+changes, so a provider outage in the middle of a document leaves the previous version
+serving. The alternative, deleting the old chunks and then embedding the new ones, has
+a window where the document has silently vanished from the corpus, and the window is
+exactly as long as your slowest provider call.
+
+**Effects are idempotent and version-ordered.** Delivery guarantees in real pipelines
+are at-least-once, so the second copy of an event is not an exception to handle, it is
+Tuesday. Every write compares the arriving source version against what is stored and
+does nothing when it is not news, which is what makes replay safe and what makes a
+crashed checkpoint recoverable rather than corrupting.
+
+Search enforces tenant and ACL before ranking, never after. Ranking first and
+filtering the results is both a leak and a bug: the protected chunk has already left
+the database, and the user gets fewer results than they asked for with no explanation.
+"""
 
 from __future__ import annotations
 
