@@ -27,3 +27,12 @@
   so `pg_upgrade --link` can work without crossing a mount boundary.
 - **Next time:** validate compose files against the pinned database major version;
   for Postgres 18+, mount the parent `/var/lib/postgresql` directory.
+
+## Integration fixtures must respect their own tombstones
+
+- **Expected:** the pgvector lifecycle test would be repeatable against one local
+  development database.
+- **Actual:** its first run correctly left a v2 tombstone; the next run tried to
+  insert v1 and was correctly rejected as stale, making the test order-dependent.
+- **Next time:** give integration fixtures a dedicated tenant and remove only that
+  tenant's rows before and after the test. Run the test twice during verification.
