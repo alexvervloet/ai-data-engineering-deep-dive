@@ -1,0 +1,19 @@
+services:
+  postgres:
+    image: pgvector/pgvector:0.8.6-pg18
+    environment:
+      POSTGRES_DB: ai_data
+      POSTGRES_USER: ai_data
+      POSTGRES_PASSWORD: ai_data_local_only
+    ports:
+      - "54329:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ai_data -d ai_data"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+    volumes:
+      - ai_data_pg:/var/lib/postgresql/data
+
+volumes:
+  ai_data_pg:
