@@ -70,11 +70,14 @@ class InMemoryCatalog:
         max_batch_items: int = 64,
         max_batch_tokens: int = 8_000,
         ocr: OCR | None = None,
+        force: bool = False,
     ) -> SyncReport:
         validate_source(record)
         key = (record.tenant_id, record.external_id)
         previous = self.documents.get(key)
-        if previous is not None and record.version <= previous.source_version:
+        stale_version = previous is not None and record.version < previous.source_version
+        same_version = previous is not None and record.version == previous.source_version
+        if stale_version or (same_version and not force):
             return SyncReport(
                 "stale",
                 record.tenant_id,
@@ -134,7 +137,7 @@ class InMemoryCatalog:
         )
         acl_changed = previous is not None and previous.acl != record.acl
         return SyncReport(
-            "updated" if previous else "created",
+            "backfilled" if previous and force else "updated" if previous else "created",
             record.tenant_id,
             record.external_id,
             record.version,
