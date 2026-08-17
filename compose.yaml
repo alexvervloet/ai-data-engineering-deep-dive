@@ -13,7 +13,7 @@ services:
       timeout: 3s
       retries: 15
     volumes:
-      - ai_data_pg:/var/lib/postgresql/data
+      - ai_data_pg18:/var/lib/postgresql
 
 volumes:
-  ai_data_pg:
+  ai_data_pg18:
