@@ -25,6 +25,12 @@ This is a bonus dive that slots after
 teaches retrieval quality; this repository teaches whether the corpus being
 retrieved is the right corpus at all.
 
+This README is the lab manual: what to run, in what order, and what each run proves.
+[TEXTBOOK.md](TEXTBOOK.md) is the lecture that goes with it, covering where this
+machinery came from, why each rule exists, and when the whole apparatus is more than
+a corpus needs. Either order works. [EXERCISES.md](EXERCISES.md) turns each lesson
+into a prediction you make before running it.
+
 ---
 
 ## What you will build
@@ -84,8 +90,8 @@ Run the full offline verification at any time:
 python -m unittest discover -v
 ```
 
-The deterministic hash embedder preserves the production control flow—batching,
-cache keys, dimensions, atomic writes, and filtered search—but is deliberately not
+The deterministic hash embedder preserves the production control flow (batching,
+cache keys, dimensions, atomic writes, and filtered search) but is deliberately not
 a semantic model. It keeps the data-engineering lesson local and repeatable.
 
 ---
@@ -138,6 +144,11 @@ Therefore parsed text has a content hash and a `parser_version`.
 Text, Markdown, and HTML work locally. PDFs and images fail closed until an OCR
 adapter is supplied. That seam is intentional: a pipeline must not quietly index
 empty text because an optional parser was missing.
+
+The HTML path also drops `script`, `style`, `template`, and `noscript` bodies. That
+is partly retrieval hygiene, since minified CSS makes poor context. It is also the
+ingest end of prompt injection: script text is arbitrary text on a page you did not
+write, and whatever the parser keeps eventually reaches a model's context window.
 
 ## 4. Deduplicate compute, not identity
 
@@ -200,9 +211,12 @@ Production should use the selected model's tokenizer; the offline estimate is
 intentionally conservative.
 
 A backfill re-runs current source state after a parser, chunker, or embedding-model
-migration. Equal source versions are permitted only in this explicit mode. The
-example migrates one old chunk to six new chunks in three bounded calls, then
-replays the job with zero new embedding calls.
+migration. Equal source versions are permitted only in this explicit mode, and only
+for documents that are not deleted: a tombstone is lifted by a strictly newer source
+event or not at all. Otherwise a routine migration, run against a snapshot captured
+around a delete, republishes content the source removed. The example migrates one old
+chunk to six new chunks in three bounded calls, then replays the job with zero new
+embedding calls.
 
 ## 8. Tombstone deletes and reconcile drift
 
@@ -216,7 +230,7 @@ source-to-index reconciliation finds the orphan, the tombstone removes it, and a
 late v1 upsert remains stale.
 
 Reconciliation also detects missing documents, stale versions, ACL drift, missing
-chunks, and dangling chunks. Repair should be observable and bounded—never a blind
+chunks, and dangling chunks. Repair should be observable and bounded, never a blind
 "delete everything not seen" operation against an incomplete source snapshot.
 
 ## 9. Gate on lineage and data quality
@@ -339,8 +353,23 @@ features together:
 - B-tree tenant and GIN ACL indexes support filtering;
 - HNSW uses cosine distance and iterative scans for filtered ANN queries;
 - the application query still includes tenant and ACL predicates explicitly;
-- row-level security repeats the check as defense in depth;
+- searches run as an unprivileged reader role, so row-level security repeats the
+  check as defense in depth and the read path cannot reach the document table;
 - deletes cascade through chunks but retain the document tombstone.
+
+That reader role is not ceremony, and the reason is the most useful thing in this
+section. Postgres exempts a table's owner from that table's row-level security
+policies unless the table is declared `FORCE ROW LEVEL SECURITY`. An application that
+connects as the role which ran its migrations, which is the common case, gets a
+policy that is present, correct, and enforcing nothing. This repository shipped
+exactly that for a while: a probe with the wrong tenant and no query predicates read
+every chunk in every tenant. Dropping to a role that owns nothing is what turns the
+second layer on. See `test_the_table_owner_is_exempt_from_the_policy`, which asserts
+the bypass itself so the exemption stays visible rather than becoming folklore.
+
+The general form is worth keeping: test that a control denies something, not that it
+exists. A security layer that is inert is worse than an absent one, because nobody
+audits the layer that is already there.
 
 Approximate indexes trade recall for speed. pgvector applies filters during an
 approximate scan and can otherwise return too few results; iterative scans search
@@ -412,6 +441,27 @@ pipeline must keep.
 
 - [pgvector: indexing, filtering, multitenancy, and maintenance](https://github.com/pgvector/pgvector)
 - [Psycopg 3 basic usage and transaction contexts](https://www.psycopg.org/psycopg3/docs/basic/usage.html)
-- [PostgreSQL row security policies](https://www.postgresql.org/docs/current/ddl-rowsecurity.html)
+- [PostgreSQL row security policies](https://www.postgresql.org/docs/current/ddl-rowsecurity.html),
+  and in particular the owner exemption and `FORCE ROW LEVEL SECURITY`
 - [PostgreSQL logical decoding concepts](https://www.postgresql.org/docs/current/logicaldecoding-explanation.html)
 - [OpenLineage specification](https://openlineage.io/docs/spec/)
+
+---
+
+## Where this sits in the series
+
+The lecture chapter is [Chapter 19](TEXTBOOK.md) of the
+[AI Engineering Textbook](https://github.com/alexvervloet/ai-engineering-deep-dive).
+The dives it depends on most:
+
+- [RAG](https://github.com/alexvervloet/rag-deep-dive): the retrieval pipeline whose
+  corpus this one keeps honest. Read it first.
+- [Prompt Injection](https://github.com/alexvervloet/prompt-injection-deep-dive):
+  what happens downstream when untrusted text reaches a model. Parsing is the first
+  place to filter it.
+- [Evals](https://github.com/alexvervloet/evals-deep-dive) and
+  [Observability](https://github.com/alexvervloet/observability-deep-dive): both
+  measure answers. A stale corpus scores perfectly against a stale eval set, which is
+  why the quality gates here run earlier.
+- [Production](https://github.com/alexvervloet/ai-in-production-deep-dive): where
+  this pipeline goes once it has to stay up.
