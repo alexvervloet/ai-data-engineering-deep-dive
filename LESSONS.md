@@ -45,3 +45,12 @@
   Git can push an existing repository but cannot create the missing remote.
 - **Next time:** run `gh auth status` before starting a new-repository task and
   create the empty remote early, while keeping the first push gated on green tests.
+
+## Keyring-backed GitHub authentication may be invisible in a sandbox
+
+- **Expected:** after signing in with `gh auth login`, the same authentication
+  status would be visible to every command environment.
+- **Actual:** sandboxed `gh auth status` continued to report an invalid token while
+  the host environment correctly found the new keyring credential.
+- **Next time:** when GitHub CLI authentication uses the system keyring, verify and
+  run API operations with the approved host-level command environment.
