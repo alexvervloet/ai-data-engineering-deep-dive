@@ -1,0 +1,29 @@
+{
+  "managed_tenants": ["acme", "beta"],
+  "documents": [
+    {
+      "tenant_id": "acme",
+      "external_id": "engineering-handbook",
+      "path": "acme/engineering.md",
+      "version": 1,
+      "readers": ["user:alex", "group:engineering"],
+      "metadata": {"owner": "platform"}
+    },
+    {
+      "tenant_id": "acme",
+      "external_id": "benefits-guide",
+      "path": "acme/benefits.md",
+      "version": 1,
+      "readers": ["group:acme-employees"],
+      "metadata": {"owner": "people"}
+    },
+    {
+      "tenant_id": "beta",
+      "external_id": "launch-plan",
+      "path": "beta/launch.md",
+      "version": 1,
+      "readers": ["user:bob", "group:beta-launch"],
+      "metadata": {"owner": "launch"}
+    }
+  ]
+}
