@@ -1,0 +1,417 @@
+# AI Data Engineering: A Guided Deep Dive
+
+RAG starts after the hardest data work has supposedly happened: the document is
+already parsed, current, authorized, chunked, embedded, and present exactly once.
+Production systems cannot suppose any of that.
+
+This course builds the machinery that makes retrieval data trustworthy. It starts
+with an untrusted connector payload and ends with a changing, multi-tenant corpus
+synchronized into Postgres/pgvector without returning deleted or unauthorized
+documents. Every conceptual lesson runs offline with deterministic data. The
+capstone uses the same lifecycle against a real database.
+
+The one big idea:
+
+> **A retrieval index is a disposable, derived view of authoritative source data.**
+
+That framing changes the design. Source versions beat arrival order. ACLs are data,
+not query decorations. Deletes become durable tombstones. Every chunk keeps its
+lineage. Reconciliation compares source truth with index state. Backups preserve
+the source snapshot and CDC cursor; the vector index is rebuilt.
+
+This is a bonus dive that slots after
+[RAG](https://github.com/alexvervloet/rag-deep-dive) and before
+[Production](https://github.com/alexvervloet/ai-in-production-deep-dive). RAG
+teaches retrieval quality; this repository teaches whether the corpus being
+retrieved is the right corpus at all.
+
+---
+
+## What you will build
+
+The path follows a document through its complete lifecycle:
+
+```text
+connector payload
+      │ strict contract + source version
+      ▼
+authoritative source record ───────────────┐
+      │ parse / OCR                        │ backup + CDC cursor
+      ▼                                    │
+normalized document                       │
+      │ content hash + provenance          │
+      ▼                                    │
+ACL-bearing chunks                         │
+      │ bounded embedding batches          │
+      ▼                                    │
+transactional tenant index                 │
+      │                                    │
+      ├── query: tenant + ACL before rank  │
+      ├── CDC: update / delete / replay    │
+      ├── reconcile against source truth   │
+      └── rebuild after loss ◀──────────────┘
+```
+
+Coverage includes:
+
+- connectors, snapshot watermarks, opaque cursor semantics, and CDC;
+- strict runtime data contracts and schema evolution boundaries;
+- text/HTML parsing plus an explicit PDF/image OCR adapter;
+- content hashes, compute deduplication, stable IDs, provenance, and lineage;
+- tenant isolation and ACL propagation into every derived chunk;
+- incremental indexing, checkpoint replay, backfills, and embedding batches;
+- deletion tombstones, stale-index reconciliation, and data-quality gates;
+- checksummed backups, recovery points, and index rebuilds;
+- a transactional Postgres/pgvector capstone with RLS as defense in depth.
+
+---
+
+## Setup
+
+Python 3.11 or newer is required. The ten lessons and the default capstone path
+need no API key, no network service, and no third-party runtime dependency.
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+python check_setup.py
+```
+
+Run the full offline verification at any time:
+
+```bash
+python -m unittest discover -v
+```
+
+The deterministic hash embedder preserves the production control flow—batching,
+cache keys, dimensions, atomic writes, and filtered search—but is deliberately not
+a semantic model. It keeps the data-engineering lesson local and repeatable.
+
+---
+
+## 1. Enforce the connector contract
+
+```bash
+python examples/01_data_contracts.py
+```
+
+A type hint or a schema shown to another system is not enforcement. The boundary
+must reject unknown fields, unsupported MIME types, naive timestamps, oversized
+content, invalid tenant identifiers, and empty ACLs before any state changes.
+
+The example accepts a valid v2 record, rejects a model-supplied tenant field, and
+shows the deny-by-default ACL. See [ai_data/contracts.py](ai_data/contracts.py).
+
+Key rule: normalize identifiers at the boundary and derive authorization from
+trusted source/session context. Never accept a tenant selected by model output.
+
+## 2. Join snapshots to CDC without a gap
+
+```bash
+python examples/02_connectors_and_cursors.py
+```
+
+A full crawl and an incremental feed are not separate conveniences; they form one
+consistency protocol:
+
+1. capture a source high-watermark;
+2. read a snapshot at that same logical instant;
+3. consume changes strictly after the watermark;
+4. persist the new cursor only after index writes commit.
+
+Start CDC too early and work is duplicated. Start too late and documents disappear
+forever. The memory connector makes both the snapshot and page boundaries visible.
+Real provider cursors should be treated as opaque tokens even though the example
+uses readable integers.
+
+## 3. Version parsing and OCR
+
+```bash
+python examples/03_parsing_and_ocr.py
+```
+
+Parsing changes data. An HTML cleanup release, PDF library upgrade, OCR model swap,
+or Unicode normalization fix can change every downstream chunk and embedding.
+Therefore parsed text has a content hash and a `parser_version`.
+
+Text, Markdown, and HTML work locally. PDFs and images fail closed until an OCR
+adapter is supplied. That seam is intentional: a pipeline must not quietly index
+empty text because an optional parser was missing.
+
+## 4. Deduplicate compute, not identity
+
+```bash
+python examples/04_dedup_and_provenance.py
+```
+
+Two tenants can store the same bytes. It is safe to reuse parsing or embedding work
+by content hash. It is unsafe to merge their document IDs, ACLs, source URIs, or
+lineage.
+
+The example shows equal blob IDs, distinct tenant-scoped document IDs, one reused
+embedding, and two lineage edges. Content-addressed work is an optimization; the
+authorization boundary remains document-addressed.
+
+## 5. Propagate ACLs into every derivative
+
+```bash
+python examples/05_acl_propagation.py
+```
+
+The source ACL is copied onto each chunk and updated even when content is unchanged.
+The example revokes Alex's access without paying to embed the unchanged text again.
+It also proves that an Acme principal cannot retrieve the identically named Beta
+document.
+
+The safe query order is:
+
+1. derive tenant and principals from trusted application context;
+2. filter rows by tenant and ACL;
+3. rank only the authorized candidate set;
+4. return provenance with each result.
+
+Filtering model output after retrieval is too late: protected content has already
+entered the application and possibly the model context.
+
+## 6. Apply CDC incrementally and replay safely
+
+```bash
+python examples/06_incremental_cdc.py
+```
+
+Each change carries a monotonically increasing source version. Updates replace a
+document atomically; deletes remove chunks and retain a tombstone version. If a
+worker commits the index write but crashes before its checkpoint, replayed events
+are reported as stale instead of duplicating or resurrecting data.
+
+Exactly-once delivery is rarely available end to end. Idempotent, version-aware
+effects plus at-least-once delivery are the practical design.
+
+## 7. Bound batches and run controlled backfills
+
+```bash
+python examples/07_batches_and_backfills.py
+```
+
+Embedding APIs constrain both item count and tokens. A safe batch planner enforces
+both, rejects an individually oversized chunk, and checkpoints between batches.
+Production should use the selected model's tokenizer; the offline estimate is
+intentionally conservative.
+
+A backfill re-runs current source state after a parser, chunker, or embedding-model
+migration. Equal source versions are permitted only in this explicit mode. The
+example migrates one old chunk to six new chunks in three bounded calls, then
+replays the job with zero new embedding calls.
+
+## 8. Tombstone deletes and reconcile drift
+
+```bash
+python examples/08_deletes_and_reconciliation.py
+```
+
+Removing a vector is not enough. Without a versioned tombstone, an old retry can
+recreate the deleted content. The example deliberately misses a delete event;
+source-to-index reconciliation finds the orphan, the tombstone removes it, and a
+late v1 upsert remains stale.
+
+Reconciliation also detects missing documents, stale versions, ACL drift, missing
+chunks, and dangling chunks. Repair should be observable and bounded—never a blind
+"delete everything not seen" operation against an incomplete source snapshot.
+
+## 9. Gate on lineage and data quality
+
+```bash
+python examples/09_lineage_and_quality.py
+```
+
+Retrieval evals cannot explain a stale or unauthorized corpus. The pipeline needs
+earlier gates:
+
+- source coverage and reconciliation drift;
+- empty chunks and inconsistent embedding dimensions;
+- ACL parity between documents and chunks;
+- lineage coverage for every derivative;
+- unusual duplicate ratios;
+- active documents with no chunks.
+
+The example removes one lineage edge and the release gate fails while every other
+metric stays green. That localization is the point.
+
+## 10. Recover source state, then rebuild derivatives
+
+```bash
+python examples/10_disaster_recovery.py
+```
+
+The backup contains source records, ACLs, versions, metadata, bytes, and the CDC
+cursor in a checksummed envelope. Recovery verifies the checksum, restores that
+snapshot, rebuilds the index, and replays events after the cursor.
+
+Define and test both:
+
+- **RPO**: how much source/CDC history can be lost;
+- **RTO**: how long parsing, chunking, embedding, index creation, and reconciliation
+  take at full corpus size.
+
+Backing up only a vector table loses the evidence needed to explain or safely
+rebuild it.
+
+---
+
+## Capstone: synchronize a multi-tenant corpus
+
+The capstone reads [corpus/manifest.json](corpus/manifest.json), validates its file
+paths and managed-tenant scope, indexes the documents, runs quality checks, and
+queries with trusted tenant/principal filters.
+
+### Offline reference path
+
+```bash
+python hands_on/sync_corpus.py
+
+# Try an unauthorized or cross-tenant identity:
+python hands_on/sync_corpus.py \
+  --tenant beta \
+  --principal user:alex \
+  --query "What is the launch codename?"
+```
+
+The default verified run indexes three documents and prints:
+
+```text
+quality gate: PASS
+unauthorized probe hits: 0
+```
+
+Only Acme's engineering handbook is returned for the default Acme principals.
+
+### Real Postgres/pgvector path
+
+The included service pins pgvector 0.8.6 on Postgres 18. Its local credentials are
+for this disposable development container only.
+
+```bash
+docker compose up -d
+pip install -r requirements-postgres.txt
+
+python hands_on/sync_corpus.py \
+  --database-url postgresql://ai_data:ai_data_local_only@localhost:54329/ai_data
+```
+
+Optional live integration test:
+
+```bash
+AI_DATA_TEST_DATABASE_URL=postgresql://ai_data:ai_data_local_only@localhost:54329/ai_data \
+  python -m unittest tests.test_postgres.PostgresIntegrationTests -v
+```
+
+Stop the local service when finished:
+
+```bash
+docker compose down
+```
+
+The live path was verified against the pinned container with these outcomes:
+
+- first sync: three `indexed` documents;
+- repeat sync: three `stale` (idempotent) versions;
+- injected orphan: detected and tombstoned on the next sync;
+- unauthorized probe: zero hits before and after reconciliation;
+- authorized query: only the Acme engineering chunk.
+
+To exercise change management:
+
+1. edit a corpus file and increment its manifest `version`;
+2. change `readers` and increment the version to test revocation;
+3. remove a document entry while keeping its tenant in `managed_tenants` to create
+   a tombstone on the next sync;
+4. try reintroducing an old/equal version and observe that it stays stale.
+
+### Why the database schema looks this way
+
+[ai_data/postgres.py](ai_data/postgres.py) deliberately uses relational and vector
+features together:
+
+- document replacement and chunk writes share one transaction;
+- tenant, external ID, source version, hash, ACL, parser version, and deletion state
+  live beside the vectors;
+- B-tree tenant and GIN ACL indexes support filtering;
+- HNSW uses cosine distance and iterative scans for filtered ANN queries;
+- the application query still includes tenant and ACL predicates explicitly;
+- row-level security repeats the check as defense in depth;
+- deletes cascade through chunks but retain the document tombstone.
+
+Approximate indexes trade recall for speed. pgvector applies filters during an
+approximate scan and can otherwise return too few results; iterative scans search
+further until enough filtered candidates are found. Shared approximate indexes can
+also create cross-tenant recall interference. At larger scale, measure filtered
+recall and consider list partitioning or separate tables for strong tenant
+isolation. See the official
+[pgvector filtering and multitenancy guidance](https://github.com/pgvector/pgvector#filtering).
+
+The Postgres 18 image also changed its durable-data layout. The compose file mounts
+`/var/lib/postgresql`, not the pre-18 `/var/lib/postgresql/data`, so major-version
+directories and `pg_upgrade --link` remain inside one mount.
+
+---
+
+## Production boundaries
+
+The repository keeps the important semantics real and several integrations small.
+Replace these seams without weakening their contracts:
+
+| Teaching implementation | Production replacement |
+|---|---|
+| `MemoryConnector` | SaaS/object-store connectors with snapshot tokens, rate limits, and durable cursors |
+| UTF-8/HTML parser + injected OCR callback | sandboxed parsers, malware checks, OCR service, page coordinates, parser-version registry |
+| deterministic hash embedding | provider/local embeddings with tokenizer-aware limits, retries, budgets, and model-version cache keys |
+| in-process embedding cache | durable content-addressed cache with retention and invalidation policy |
+| one transaction per document | bulk staging/COPY, bounded workers, dead-letter queue, retry taxonomy, and checkpoint store |
+| local backup string | encrypted object storage, retention policy, restore drills, and immutable audit evidence |
+| one HNSW index | measured exact/ANN recall, tenant partitioning, vacuum/reindex plans, capacity tests, and replicas |
+
+Do not add concurrency before the idempotency, versioning, and transaction semantics
+are tested. Parallelizing an unsafe lifecycle only makes corruption arrive faster.
+
+---
+
+## File map
+
+```text
+ai_data/
+  models.py       immutable source, change, chunk, index, and lineage records
+  contracts.py    strict runtime connector validation
+  connectors.py   consistent snapshot + CDC reference connector
+  parsing.py      text/HTML parsing and explicit OCR seam
+  identity.py     normalization, hashes, and tenant-safe stable IDs
+  chunking.py     deterministic chunks with ACL and lineage propagation
+  embedding.py    bounded batch planner and offline embedder
+  catalog.py      atomic in-memory lifecycle and authorized search
+  pipeline.py     bootstrap, checkpointed CDC, replay, and backfill
+  reconcile.py    missing, stale, orphan, ACL, and chunk drift detection
+  quality.py      release-oriented data-quality gates
+  recovery.py     checksummed source backup and restore
+  manifest.py     strict filesystem corpus connector
+  postgres.py     transactional Postgres/pgvector backend
+examples/         ten offline, inspectable lessons
+hands_on/
+  sync_corpus.py  offline + live multi-tenant synchronization capstone
+corpus/           two-tenant sample corpus and ACL manifest
+tests/            lifecycle, isolation, recovery, and optional integration tests
+compose.yaml      pinned local pgvector 0.8.6 / Postgres 18 service
+```
+
+Then use [EXERCISES.md](EXERCISES.md) to predict each failure before running it.
+The tests are also course material: each one names an invariant the production
+pipeline must keep.
+
+---
+
+## Further reading
+
+- [pgvector: indexing, filtering, multitenancy, and maintenance](https://github.com/pgvector/pgvector)
+- [Psycopg 3 basic usage and transaction contexts](https://www.psycopg.org/psycopg3/docs/basic/usage.html)
+- [PostgreSQL row security policies](https://www.postgresql.org/docs/current/ddl-rowsecurity.html)
+- [PostgreSQL logical decoding concepts](https://www.postgresql.org/docs/current/logicaldecoding-explanation.html)
+- [OpenLineage specification](https://openlineage.io/docs/spec/)
