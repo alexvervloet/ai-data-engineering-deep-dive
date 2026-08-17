@@ -1,4 +1,26 @@
-"""Bounded embedding batches and an offline deterministic embedding seam."""
+"""Bounded embedding batches and an offline deterministic embedding seam.
+
+Embedding is the step that costs money and rate limit, so it is the step with limits
+on it. Providers bound a request twice, by item count and by total tokens, and a
+planner that respects only one of them works fine until the day a corpus of long
+documents arrives. Both limits are enforced here, and a single chunk that cannot fit
+is refused loudly rather than truncated quietly, because truncation is a data loss
+that looks like a successful run.
+
+`estimate_tokens` is deliberately conservative and deliberately not a tokenizer. In
+production, count with the tokenizer of the model being called: an estimate that runs
+low turns into provider errors mid-batch, which is the expensive place to find out.
+
+The cache key is the model plus the content hash, in that order of importance. Content
+alone would serve a vector from one model to a query embedded by another, which fails
+in the worst way available: not an error, just quietly meaningless similarity scores.
+`DeterministicEmbedder` folds its dimensions into its model name for that reason.
+
+What this embedder is not is semantic. It reproduces the shape of the real thing,
+batching, caching, dimensions, and cost accounting, so the data-engineering lesson runs
+offline and identically on every machine. Similarity between its vectors means only
+that two texts share words.
+"""
 
 from __future__ import annotations
 

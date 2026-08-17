@@ -1,4 +1,20 @@
-"""Deterministic chunking with explicit provenance and ACL propagation."""
+"""Deterministic chunking with explicit provenance and ACL propagation.
+
+The RAG dive treats chunking as a retrieval-quality knob: how big, how much overlap,
+where to cut. All of that still applies. This module is about the other half, the part
+that only shows up once the corpus changes.
+
+Chunking has to be a pure function of the text and the settings. If it is not, then
+re-running it on an unchanged document produces different chunk IDs, every one of them
+misses the embedding cache, the old rows do not match the new ones, and an ordinary
+resync bills a full re-embed of a corpus that did not change. Determinism here is what
+makes an incremental pipeline incremental.
+
+Chunks are also where authorization is most easily lost. A chunk leaves this module
+carrying its tenant, its ACL, its source URI, its source version, and its parser
+version, because from here on it travels alone. Whatever it does not carry, the
+retrieval path cannot check, and the retrieval path is the one talking to the model.
+"""
 
 from __future__ import annotations
 
