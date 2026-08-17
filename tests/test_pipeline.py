@@ -8,7 +8,7 @@ from ai_data.catalog import InMemoryCatalog
 from ai_data.connectors import MemoryConnector
 from ai_data.contracts import ContractViolation, source_from_mapping
 from ai_data.embedding import DeterministicEmbedder, plan_batches
-from ai_data.identity import document_id
+from ai_data.identity import chunk_id, document_id
 from ai_data.models import AccessControl, SourceRecord
 from ai_data.pipeline import SyncPipeline
 from ai_data.quality import assess_quality
@@ -61,6 +61,21 @@ class PipelineTests(unittest.TestCase):
 
     def test_document_ids_are_tenant_scoped(self) -> None:
         self.assertNotEqual(document_id("acme", "guide"), document_id("beta", "guide"))
+
+    def test_identity_scheme_is_pinned(self) -> None:
+        """An ID scheme is a compatibility contract with every index already written.
+
+        Refactoring the hash input is not a cosmetic change: it renames every document
+        and chunk in production, orphans the rows under the old names, and re-embeds a
+        corpus that did not change. These literals make that consequence impossible to
+        cause by accident.
+        """
+
+        self.assertEqual(document_id("acme", "security.md"), "doc_27e1f9baa185421bec51809a")
+        self.assertEqual(chunk_id("doc_abc", 0, "hello"), "chk_5137fa38d490275b1ff1c627")
+
+    def test_identity_separator_prevents_field_boundary_collisions(self) -> None:
+        self.assertNotEqual(document_id("acme", "bguide"), document_id("acmeb", "guide"))
 
     def test_snapshot_then_cdc_has_no_gap(self) -> None:
         connector = MemoryConnector()
