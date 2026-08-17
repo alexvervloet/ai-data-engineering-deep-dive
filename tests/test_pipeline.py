@@ -195,6 +195,23 @@ class PipelineTests(unittest.TestCase):
 
         self.assertTrue(all(len(batch.chunks) == 1 for batch in batches))
 
+    def test_embedding_cache_does_not_mix_dimensions(self) -> None:
+        catalog = InMemoryCatalog()
+        catalog.upsert(source("guide"), DeterministicEmbedder(dimensions=8))
+
+        report = catalog.upsert(
+            source("guide", tenant="beta", readers=frozenset({"user:bob"})),
+            DeterministicEmbedder(dimensions=16),
+        )
+
+        self.assertEqual(report.embeddings_created, 1)
+        beta_entry = next(
+            entry
+            for (tenant_id, _), entry in catalog.entries.items()
+            if tenant_id == "beta"
+        )
+        self.assertEqual(len(beta_entry.embedding), 16)
+
     def test_backup_round_trip_and_tamper_detection(self) -> None:
         record = source("guide")
         serialized = create_backup((record,), cdc_cursor=7)
