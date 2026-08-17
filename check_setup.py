@@ -1,4 +1,25 @@
-"""Verify the offline course and report optional Postgres readiness."""
+"""
+check_setup.py: confirm the course runs before you start it.
+
+Run this first. It answers one question, "will the lessons work on this machine?",
+and it is deliberately quick to satisfy: the ten lessons and the default capstone path
+need Python 3.11 or newer and nothing else. No API key, no network, no service, no
+third-party runtime dependency.
+
+The Postgres pieces are reported rather than required, because they are optional
+until the live capstone. There is one combination this script treats as an error
+though, and it is the interesting case: a database URL configured with no driver
+installed. That means somebody set up the environment for the live path and would
+otherwise get an import failure partway through a sync, which is a confusing place
+to learn about a missing package.
+
+Run it:
+
+    python check_setup.py
+
+Exit status is 0 when the offline course is ready, 1 otherwise, so it also works as
+a first CI step.
+"""
 
 from __future__ import annotations
 
