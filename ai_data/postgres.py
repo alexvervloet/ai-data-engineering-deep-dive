@@ -129,7 +129,11 @@ class PostgresCatalog:
         )
 
     def replace_document(
-        self, record: SourceRecord, embedder: DeterministicEmbedder
+        self,
+        record: SourceRecord,
+        embedder: DeterministicEmbedder,
+        *,
+        force: bool = False,
     ) -> PostgresSyncReport:
         parsed = parse_document(record)
         result = chunk_document(parsed)
@@ -141,9 +145,10 @@ class PostgresCatalog:
                 for chunk, vector in zip(batch.chunks, batch_vectors, strict=True)
             )
 
+        version_comparison = "<=" if force else "<"
         with self.connection.transaction():
             updated = self.connection.execute(
-                """
+                f"""
                 INSERT INTO ai_documents (
                     tenant_id, document_id, external_id, source_uri, source_version,
                     content_hash, acl, parser_version, updated_at, deleted_at
@@ -156,7 +161,7 @@ class PostgresCatalog:
                     parser_version = EXCLUDED.parser_version,
                     updated_at = EXCLUDED.updated_at,
                     deleted_at = NULL
-                WHERE ai_documents.source_version <= EXCLUDED.source_version
+                WHERE ai_documents.source_version {version_comparison} EXCLUDED.source_version
                 RETURNING source_version
                 """,
                 (
