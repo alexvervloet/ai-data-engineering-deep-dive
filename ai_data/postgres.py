@@ -106,6 +106,27 @@ class PostgresCatalog:
             for statement in SCHEMA_STATEMENTS:
                 self.connection.execute(statement)
 
+    def active_documents(
+        self, managed_tenants: tuple[str, ...]
+    ) -> tuple[tuple[str, str, str, int], ...]:
+        """Return service-side state for stale-document reconciliation."""
+
+        if not managed_tenants:
+            return ()
+        rows = self.connection.execute(
+            """
+            SELECT tenant_id, external_id, document_id, source_version
+            FROM ai_documents
+            WHERE tenant_id = ANY(%s) AND deleted_at IS NULL
+            ORDER BY tenant_id, external_id
+            """,
+            (list(managed_tenants),),
+        ).fetchall()
+        return tuple(
+            (tenant_id, external_id, doc_id, int(version))
+            for tenant_id, external_id, doc_id, version in rows
+        )
+
     def replace_document(
         self, record: SourceRecord, embedder: DeterministicEmbedder
     ) -> PostgresSyncReport:
