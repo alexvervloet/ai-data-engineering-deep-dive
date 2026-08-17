@@ -38,23 +38,28 @@ class PostgresIntegrationTests(unittest.TestCase):
         dsn = os.environ["AI_DATA_TEST_DATABASE_URL"]
         catalog = PostgresCatalog.connect(dsn)
         embedder = DeterministicEmbedder()
+        tenant = "integration_test"
         try:
             catalog.setup()
+            with catalog.connection.transaction():
+                catalog.connection.execute(
+                    "DELETE FROM ai_documents WHERE tenant_id = %s", (tenant,)
+                )
             record = source(
                 "integration-guide",
-                tenant="integration_test",
+                tenant=tenant,
                 text="Integration tenant secret violet",
             )
             catalog.replace_document(record, embedder)
 
             allowed = catalog.search(
-                tenant_id="integration_test",
+                tenant_id=tenant,
                 principals=frozenset({"user:alex"}),
                 query="tenant secret",
                 embedder=embedder,
             )
             denied = catalog.search(
-                tenant_id="integration_test",
+                tenant_id=tenant,
                 principals=frozenset({"user:mallory"}),
                 query="tenant secret",
                 embedder=embedder,
@@ -63,14 +68,14 @@ class PostgresIntegrationTests(unittest.TestCase):
             self.assertEqual(denied, ())
 
             catalog.delete_document(
-                tenant_id="integration_test",
+                tenant_id=tenant,
                 external_id="integration-guide",
-                document_id=document_id("integration_test", "integration-guide"),
+                document_id=document_id(tenant, "integration-guide"),
                 version=2,
             )
             self.assertEqual(
                 catalog.search(
-                    tenant_id="integration_test",
+                    tenant_id=tenant,
                     principals=frozenset({"user:alex"}),
                     query="tenant secret",
                     embedder=embedder,
@@ -78,6 +83,10 @@ class PostgresIntegrationTests(unittest.TestCase):
                 (),
             )
         finally:
+            with catalog.connection.transaction():
+                catalog.connection.execute(
+                    "DELETE FROM ai_documents WHERE tenant_id = %s", (tenant,)
+                )
             catalog.close()
 
 
