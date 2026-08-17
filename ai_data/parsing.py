@@ -18,20 +18,35 @@ class ParseError(ValueError):
 
 class _HTMLTextExtractor(HTMLParser):
     _BLOCKS = {"article", "br", "div", "h1", "h2", "h3", "li", "p", "section"}
+    # Text inside these elements is code for the browser, never prose for the reader.
+    # Indexing it pollutes retrieval with minified noise, and it hands whoever wrote
+    # the page a channel into the model's context, since a script body can contain any
+    # text at all. Everything a parser keeps becomes something a model will read.
+    _NON_CONTENT = {"script", "style", "template", "noscript"}
 
     def __init__(self) -> None:
         super().__init__()
         self.parts: list[str] = []
+        self._suppressed: list[str] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag in self._NON_CONTENT:
+            self._suppressed.append(tag)
         if tag in self._BLOCKS:
             self.parts.append("\n")
 
     def handle_endtag(self, tag: str) -> None:
+        if tag in self._NON_CONTENT and tag in self._suppressed:
+            # Remove the innermost match rather than assuming tags nest correctly.
+            # Real HTML often does not, and a stack that never empties would swallow
+            # the rest of the document.
+            self._suppressed.remove(tag)
         if tag in self._BLOCKS:
             self.parts.append("\n")
 
     def handle_data(self, data: str) -> None:
+        if self._suppressed:
+            return
         self.parts.append(data)
 
 
