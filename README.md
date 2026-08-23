@@ -1,35 +1,34 @@
 # AI Data Engineering: A Guided Deep Dive
 
-RAG starts after the hardest data work has supposedly happened: the document is
-already parsed, current, authorized, chunked, embedded, and present exactly once.
-Production systems cannot suppose any of that.
+RAG starts after the hardest data work has supposedly already happened. The document is
+parsed, current, authorized, chunked, embedded, and present exactly once. Production
+systems get to assume none of that.
 
-This course builds the machinery that makes retrieval data trustworthy. It starts
-with an untrusted connector payload and ends with a changing, multi-tenant corpus
-synchronized into Postgres/pgvector without returning deleted or unauthorized
-documents. Every conceptual lesson runs offline with deterministic data. The
-capstone uses the same lifecycle against a real database.
+This course builds the machinery that makes retrieval data trustworthy. It starts with an
+untrusted connector payload and ends with a changing, multi-tenant corpus synchronized into
+Postgres and pgvector without returning deleted or unauthorized documents. Every conceptual
+lesson runs offline with deterministic data. The capstone runs the same lifecycle against a
+real database.
 
 The one big idea:
 
 > **A retrieval index is a disposable, derived view of authoritative source data.**
 
-That framing changes the design. Source versions beat arrival order. ACLs are data,
-not query decorations. Deletes become durable tombstones. Every chunk keeps its
-lineage. Reconciliation compares source truth with index state. Backups preserve
-the source snapshot and CDC cursor; the vector index is rebuilt.
+That framing changes the design. Source versions beat arrival order. ACLs are data rather
+than query decorations. Deletes become durable tombstones. Every chunk keeps its lineage.
+Reconciliation compares source truth against index state. Backups preserve the source
+snapshot and the CDC cursor, and you rebuild the vector index.
 
-This is a bonus dive that slots after
-[RAG](https://github.com/alexvervloet/rag-deep-dive) and before
-[Production](https://github.com/alexvervloet/ai-in-production-deep-dive). RAG
-teaches retrieval quality; this repository teaches whether the corpus being
-retrieved is the right corpus at all.
+This is a bonus dive that slots after [RAG](https://github.com/alexvervloet/rag-deep-dive)
+and before [Production](https://github.com/alexvervloet/ai-in-production-deep-dive). RAG
+teaches retrieval quality. This repository teaches whether the corpus being retrieved is
+the right corpus at all.
 
 This README is the lab manual: what to run, in what order, and what each run proves.
-[TEXTBOOK.md](TEXTBOOK.md) is the lecture that goes with it, covering where this
-machinery came from, why each rule exists, and when the whole apparatus is more than
-a corpus needs. Either order works. [EXERCISES.md](EXERCISES.md) turns each lesson
-into a prediction you make before running it.
+[TEXTBOOK.md](TEXTBOOK.md) is the lecture that goes with it, covering where this machinery
+came from, why each rule exists, and when the whole apparatus is more than a corpus needs.
+Either order works. [EXERCISES.md](EXERCISES.md) turns each lesson into a prediction you
+make before running it.
 
 ---
 
@@ -74,8 +73,8 @@ Coverage includes:
 
 ## Setup
 
-Python 3.11 or newer is required. The ten lessons and the default capstone path
-need no API key, no network service, and no third-party runtime dependency.
+You need Python 3.11 or newer. The ten lessons and the default capstone path need no API
+key, no network service, and no third-party runtime dependency.
 
 ```bash
 python3 -m venv .venv
@@ -90,9 +89,9 @@ Run the full offline verification at any time:
 python -m unittest discover -v
 ```
 
-The deterministic hash embedder preserves the production control flow (batching,
-cache keys, dimensions, atomic writes, and filtered search) but is deliberately not
-a semantic model. It keeps the data-engineering lesson local and repeatable.
+The deterministic hash embedder preserves the production control flow, meaning batching,
+cache keys, dimensions, atomic writes, and filtered search, and it is deliberately not a
+semantic model. It keeps the data-engineering lesson local and repeatable.
 
 ---
 
@@ -102,15 +101,15 @@ a semantic model. It keeps the data-engineering lesson local and repeatable.
 python examples/01_data_contracts.py
 ```
 
-A type hint or a schema shown to another system is not enforcement. The boundary
-must reject unknown fields, unsupported MIME types, naive timestamps, oversized
-content, invalid tenant identifiers, and empty ACLs before any state changes.
+A type hint, or a schema you showed to another system, is not enforcement. The boundary has
+to reject unknown fields, unsupported MIME types, naive timestamps, oversized content,
+invalid tenant identifiers, and empty ACLs before any state changes.
 
 The example accepts a valid v2 record, rejects a model-supplied tenant field, and
 shows the deny-by-default ACL. See [ai_data/contracts.py](ai_data/contracts.py).
 
-Key rule: normalize identifiers at the boundary and derive authorization from
-trusted source/session context. Never accept a tenant selected by model output.
+The rule to keep: normalize identifiers at the boundary, and derive authorization from
+trusted source or session context. Never accept a tenant selected by model output.
 
 ## 2. Join snapshots to CDC without a gap
 
@@ -118,18 +117,17 @@ trusted source/session context. Never accept a tenant selected by model output.
 python examples/02_connectors_and_cursors.py
 ```
 
-A full crawl and an incremental feed are not separate conveniences; they form one
-consistency protocol:
+A full crawl and an incremental feed are not two separate conveniences. They form one
+consistency protocol.
 
 1. capture a source high-watermark;
 2. read a snapshot at that same logical instant;
 3. consume changes strictly after the watermark;
 4. persist the new cursor only after index writes commit.
 
-Start CDC too early and work is duplicated. Start too late and documents disappear
-forever. The memory connector makes both the snapshot and page boundaries visible.
-Real provider cursors should be treated as opaque tokens even though the example
-uses readable integers.
+Start CDC too early and you duplicate work. Start too late and documents disappear forever.
+The memory connector makes both the snapshot and the page boundaries visible. Treat real
+provider cursors as opaque tokens, even though the example uses readable integers.
 
 ## 3. Version parsing and OCR
 
@@ -137,32 +135,31 @@ uses readable integers.
 python examples/03_parsing_and_ocr.py
 ```
 
-Parsing changes data. An HTML cleanup release, PDF library upgrade, OCR model swap,
-or Unicode normalization fix can change every downstream chunk and embedding.
-Therefore parsed text has a content hash and a `parser_version`.
+Parsing changes data. An HTML cleanup release, a PDF library upgrade, an OCR model swap, or
+a Unicode normalization fix can change every downstream chunk and embedding. So parsed text
+carries a content hash and a `parser_version`.
 
-Text, Markdown, and HTML work locally. PDFs and images fail closed until an OCR
-adapter is supplied. That seam is intentional: a pipeline must not quietly index
-empty text because an optional parser was missing.
+Text, Markdown, and HTML work locally. PDFs and images fail closed until you supply an OCR
+adapter. That boundary is deliberate. A pipeline must never index empty text, with nothing
+said about it, because an optional parser was missing.
 
 The HTML path also drops `script`, `style`, `template`, and `noscript` bodies. That
 is partly retrieval hygiene, since minified CSS makes poor context. It is also the
 ingest end of prompt injection: script text is arbitrary text on a page you did not
 write, and whatever the parser keeps eventually reaches a model's context window.
 
-## 4. Deduplicate compute, not identity
+## 4. Deduplicate compute, never identity
 
 ```bash
 python examples/04_dedup_and_provenance.py
 ```
 
-Two tenants can store the same bytes. It is safe to reuse parsing or embedding work
-by content hash. It is unsafe to merge their document IDs, ACLs, source URIs, or
-lineage.
+Two tenants can store the same bytes. Reusing parsing or embedding work by content hash is
+safe. Merging their document IDs, ACLs, source URIs, or lineage is not.
 
-The example shows equal blob IDs, distinct tenant-scoped document IDs, one reused
-embedding, and two lineage edges. Content-addressed work is an optimization; the
-authorization boundary remains document-addressed.
+The example shows equal blob IDs, distinct tenant-scoped document IDs, one reused embedding,
+and two lineage edges. Content-addressed work is an optimization. The authorization boundary
+stays document-addressed.
 
 ## 5. Propagate ACLs into every derivative
 
@@ -170,20 +167,20 @@ authorization boundary remains document-addressed.
 python examples/05_acl_propagation.py
 ```
 
-The source ACL is copied onto each chunk and updated even when content is unchanged.
-The example revokes Alex's access without paying to embed the unchanged text again.
-It also proves that an Acme principal cannot retrieve the identically named Beta
+The source ACL gets copied onto each chunk and updated even when the content has not
+changed. The example revokes Alex's access without paying to embed the unchanged text
+again. It also proves that an Acme principal cannot retrieve the identically named Beta
 document.
 
-The safe query order is:
+The safe query order runs like this.
 
 1. derive tenant and principals from trusted application context;
 2. filter rows by tenant and ACL;
 3. rank only the authorized candidate set;
 4. return provenance with each result.
 
-Filtering model output after retrieval is too late: protected content has already
-entered the application and possibly the model context.
+Filtering model output after retrieval is too late. Protected content has already entered
+the application, and possibly the model context.
 
 ## 6. Apply CDC incrementally and replay safely
 
@@ -191,13 +188,13 @@ entered the application and possibly the model context.
 python examples/06_incremental_cdc.py
 ```
 
-Each change carries a monotonically increasing source version. Updates replace a
-document atomically; deletes remove chunks and retain a tombstone version. If a
-worker commits the index write but crashes before its checkpoint, replayed events
-are reported as stale instead of duplicating or resurrecting data.
+Each change carries a monotonically increasing source version. Updates replace a document
+atomically. Deletes remove chunks and keep a tombstone version. If a worker commits the
+index write and crashes before its checkpoint, replayed events come back as stale instead
+of duplicating or resurrecting data.
 
-Exactly-once delivery is rarely available end to end. Idempotent, version-aware
-effects plus at-least-once delivery are the practical design.
+Exactly-once delivery is rarely available end to end. Idempotent, version-aware effects plus
+at-least-once delivery is the practical design.
 
 ## 7. Bound batches and run controlled backfills
 
@@ -205,10 +202,10 @@ effects plus at-least-once delivery are the practical design.
 python examples/07_batches_and_backfills.py
 ```
 
-Embedding APIs constrain both item count and tokens. A safe batch planner enforces
-both, rejects an individually oversized chunk, and checkpoints between batches.
-Production should use the selected model's tokenizer; the offline estimate is
-intentionally conservative.
+Embedding APIs constrain both item count and tokens. A safe batch planner enforces both,
+rejects an individually oversized chunk, and checkpoints between batches. Production should
+use the selected model's tokenizer. The offline estimate here is deliberately
+conservative.
 
 A backfill re-runs current source state after a parser, chunker, or embedding-model
 migration. Equal source versions are permitted only in this explicit mode, and only
@@ -224,14 +221,14 @@ embedding calls.
 python examples/08_deletes_and_reconciliation.py
 ```
 
-Removing a vector is not enough. Without a versioned tombstone, an old retry can
-recreate the deleted content. The example deliberately misses a delete event;
-source-to-index reconciliation finds the orphan, the tombstone removes it, and a
-late v1 upsert remains stale.
+Removing a vector is not enough. Without a versioned tombstone, an old retry can recreate
+the deleted content. The example deliberately misses a delete event. Source-to-index
+reconciliation finds the orphan, the tombstone removes it, and a late v1 upsert stays
+stale.
 
-Reconciliation also detects missing documents, stale versions, ACL drift, missing
-chunks, and dangling chunks. Repair should be observable and bounded, never a blind
-"delete everything not seen" operation against an incomplete source snapshot.
+Reconciliation also detects missing documents, stale versions, ACL drift, missing chunks,
+and dangling chunks. Repair should be observable and bounded, never a blind "delete
+everything not seen" run against an incomplete source snapshot.
 
 ## 9. Gate on lineage and data quality
 
@@ -239,8 +236,8 @@ chunks, and dangling chunks. Repair should be observable and bounded, never a bl
 python examples/09_lineage_and_quality.py
 ```
 
-Retrieval evals cannot explain a stale or unauthorized corpus. The pipeline needs
-earlier gates:
+Retrieval evals cannot explain a stale or unauthorized corpus. The pipeline needs earlier
+gates.
 
 - source coverage and reconciliation drift;
 - empty chunks and inconsistent embedding dimensions;
@@ -249,8 +246,8 @@ earlier gates:
 - unusual duplicate ratios;
 - active documents with no chunks.
 
-The example removes one lineage edge and the release gate fails while every other
-metric stays green. That localization is the point.
+The example removes one lineage edge, and the release gate fails while every other metric
+stays green. Pinpointing it that precisely is the point.
 
 ## 10. Recover source state, then rebuild derivatives
 
@@ -258,18 +255,18 @@ metric stays green. That localization is the point.
 python examples/10_disaster_recovery.py
 ```
 
-The backup contains source records, ACLs, versions, metadata, bytes, and the CDC
-cursor in a checksummed envelope. Recovery verifies the checksum, restores that
-snapshot, rebuilds the index, and replays events after the cursor.
+The backup holds source records, ACLs, versions, metadata, bytes, and the CDC cursor in a
+checksummed envelope. Recovery verifies the checksum, restores that snapshot, rebuilds the
+index, and replays events after the cursor.
 
-Define and test both:
+Define and test both of these.
 
 - **RPO**: how much source/CDC history can be lost;
 - **RTO**: how long parsing, chunking, embedding, index creation, and reconciliation
   take at full corpus size.
 
-Backing up only a vector table loses the evidence needed to explain or safely
-rebuild it.
+Back up only a vector table and you lose the evidence you would need to explain it, or to
+rebuild it safely.
 
 ---
 
@@ -302,8 +299,8 @@ Only Acme's engineering handbook is returned for the default Acme principals.
 
 ### Real Postgres/pgvector path
 
-The included service pins pgvector 0.8.6 on Postgres 18. Its local credentials are
-for this disposable development container only.
+The included service pins pgvector 0.8.6 on Postgres 18. Its local credentials belong to
+this disposable development container and nowhere else.
 
 ```bash
 docker compose up -d
@@ -344,8 +341,8 @@ To exercise change management:
 
 ### Why the database schema looks this way
 
-[ai_data/postgres.py](ai_data/postgres.py) deliberately uses relational and vector
-features together:
+[ai_data/postgres.py](ai_data/postgres.py) deliberately uses relational and vector features
+together.
 
 - document replacement and chunk writes share one transaction;
 - tenant, external ID, source version, hash, ACL, parser version, and deletion state
@@ -357,38 +354,37 @@ features together:
   check as defense in depth and the read path cannot reach the document table;
 - deletes cascade through chunks but retain the document tombstone.
 
-That reader role is not ceremony, and the reason is the most useful thing in this
-section. Postgres exempts a table's owner from that table's row-level security
-policies unless the table is declared `FORCE ROW LEVEL SECURITY`. An application that
-connects as the role which ran its migrations, which is the common case, gets a
-policy that is present, correct, and enforcing nothing. This repository shipped
-exactly that for a while: a probe with the wrong tenant and no query predicates read
-every chunk in every tenant. Dropping to a role that owns nothing is what turns the
-second layer on. See `test_the_table_owner_is_exempt_from_the_policy`, which asserts
-the bypass itself so the exemption stays visible rather than becoming folklore.
+That reader role is not ceremony, and the reason behind it is the most useful thing in this
+section. Postgres exempts a table's owner from that table's row-level security policies
+unless the table is declared `FORCE ROW LEVEL SECURITY`. An application that connects as the
+role which ran its migrations, which is the common case, gets a policy that is present,
+correct, and enforcing nothing. This repository shipped exactly that for a while. A probe
+with the wrong tenant and no query predicates read every chunk in every tenant. Dropping to
+a role that owns nothing is what turns the second layer on. See
+`test_the_table_owner_is_exempt_from_the_policy`, which asserts the bypass itself so the
+exemption stays visible instead of becoming folklore.
 
-The general form is worth keeping: test that a control denies something, not that it
-exists. A security layer that is inert is worse than an absent one, because nobody
-audits the layer that is already there.
+The general form is worth keeping. Test that a control denies something, not that it
+exists. An inert security layer is worse than an absent one, because nobody audits the
+layer that is already there.
 
-Approximate indexes trade recall for speed. pgvector applies filters during an
-approximate scan and can otherwise return too few results; iterative scans search
-further until enough filtered candidates are found. Shared approximate indexes can
-also create cross-tenant recall interference. At larger scale, measure filtered
-recall and consider list partitioning or separate tables for strong tenant
-isolation. See the official
+Approximate indexes trade recall for speed. pgvector applies filters during an approximate
+scan and can otherwise return too few results, and iterative scans search further until
+enough filtered candidates turn up. Shared approximate indexes can also create cross-tenant
+recall interference. At larger scale, measure filtered recall and consider list
+partitioning or separate tables for strong tenant isolation. See the official
 [pgvector filtering and multitenancy guidance](https://github.com/pgvector/pgvector#filtering).
 
 The Postgres 18 image also changed its durable-data layout. The compose file mounts
-`/var/lib/postgresql`, not the pre-18 `/var/lib/postgresql/data`, so major-version
-directories and `pg_upgrade --link` remain inside one mount.
+`/var/lib/postgresql` rather than the pre-18 `/var/lib/postgresql/data`, so major-version
+directories and `pg_upgrade --link` stay inside one mount.
 
 ---
 
 ## Production boundaries
 
-The repository keeps the important semantics real and several integrations small.
-Replace these seams without weakening their contracts:
+The repository keeps the important semantics real and several integrations small. Replace
+these joins without weakening their contracts.
 
 | Teaching implementation | Production replacement |
 |---|---|
@@ -400,8 +396,8 @@ Replace these seams without weakening their contracts:
 | local backup string | encrypted object storage, retention policy, restore drills, and immutable audit evidence |
 | one HNSW index | measured exact/ANN recall, tenant partitioning, vacuum/reindex plans, capacity tests, and replicas |
 
-Do not add concurrency before the idempotency, versioning, and transaction semantics
-are tested. Parallelizing an unsafe lifecycle only makes corruption arrive faster.
+Do not add concurrency until you have tested the idempotency, versioning, and transaction
+semantics. Parallelizing an unsafe lifecycle only makes corruption arrive faster.
 
 ---
 
@@ -431,9 +427,9 @@ tests/            lifecycle, isolation, recovery, and optional integration tests
 compose.yaml      pinned local pgvector 0.8.6 / Postgres 18 service
 ```
 
-Then use [EXERCISES.md](EXERCISES.md) to predict each failure before running it.
-The tests are also course material: each one names an invariant the production
-pipeline must keep.
+Then use [EXERCISES.md](EXERCISES.md) to predict each failure before you run it. The tests
+are course material too. Each one names an invariant the production pipeline has to
+keep.
 
 ---
 
@@ -454,8 +450,8 @@ The lecture chapter is [Chapter 19](TEXTBOOK.md) of the
 [AI Engineering Textbook](https://github.com/alexvervloet/ai-engineering-deep-dive).
 The dives it depends on most:
 
-- [RAG](https://github.com/alexvervloet/rag-deep-dive): the retrieval pipeline whose
-  corpus this one keeps honest. Read it first.
+- [RAG](https://github.com/alexvervloet/rag-deep-dive): the retrieval pipeline whose corpus
+  this one keeps current and correct. Read it first.
 - [Prompt Injection](https://github.com/alexvervloet/prompt-injection-deep-dive):
   what happens downstream when untrusted text reaches a model. Parsing is the first
   place to filter it.
