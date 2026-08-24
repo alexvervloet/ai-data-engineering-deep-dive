@@ -109,7 +109,7 @@ def parse_args() -> argparse.Namespace:
 def _assert_probe_is_untrusted(manifest: CorpusManifest) -> None:
     """Make sure the isolation probe is still a principal with no rights.
 
-    A leak test that quietly starts passing is worse than no leak test. If somebody
+    A leak test that starts passing on its own is worse than no leak test. If somebody
     ever adds the probe to a document's readers, every probe below would return hits,
     and the natural reaction would be to relax the assertion rather than to notice
     that the test had stopped meaning anything. So the script refuses to run at all.
