@@ -3,7 +3,7 @@ Lesson 2: join a consistent snapshot to a change feed without a gap.
 
 Getting documents out of a source system looks like two features: crawl everything
 once, then keep up with changes. They are not two features. They are one protocol,
-and the seam between them is where corpora go quietly wrong.
+and the seam between them is where corpora go wrong unnoticed.
 
 The protocol has four steps:
 
