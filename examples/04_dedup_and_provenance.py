@@ -25,7 +25,7 @@ the kind of bug that gets discovered by a customer.
 There is one more field the cache key needs, and leaving it out never raises an
 error. An embedding cache keyed by content alone will serve a vector made by last
 quarter's model to a query embedded by this quarter's. That is not a crash: it is
-similarity scores that are quietly meaningless. The key is the model and its
+similarity scores that are meaningless and look fine. The key is the model and its
 dimensions plus the content hash, and this repository has a commit fixing exactly
 that omission.
 
