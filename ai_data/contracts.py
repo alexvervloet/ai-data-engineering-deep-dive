@@ -9,7 +9,7 @@ The rules worth knowing beyond the code itself:
 
 Unknown fields are an error, not something to ignore. A field the pipeline silently
 drops is a field the sending team believes is being honored. When it turns out not to
-be, the evidence is a document that has quietly been wrong for months.
+be, the evidence is a document that has been wrong for months.
 
 Timestamps carry an offset or they are refused. "9 a.m." is not a time, and a backfill
 that sorts on ambiguous timestamps reorders history without telling anyone.
