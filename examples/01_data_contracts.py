@@ -16,7 +16,7 @@ Three rejections are worth predicting before you run it:
 
   - An **unknown field** is an error, not something to ignore. The sending team
     believes a field they added is being honored. Silently dropping it means the
-    evidence of the misunderstanding is a corpus that has quietly been wrong.
+    evidence of the misunderstanding is a corpus that has been wrong all along.
   - An **empty ACL** denies rather than defaulting to public. This is a
     one-character difference between a document nobody can read and a document
     everybody can, and only one of those mistakes is recoverable.
