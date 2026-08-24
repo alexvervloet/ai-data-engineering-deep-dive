@@ -139,7 +139,7 @@ class PostgresIntegrationTests(unittest.TestCase):
         self.assertEqual(leaked, [])
 
     def test_the_table_owner_is_exempt_from_the_policy(self) -> None:
-        """The gotcha, kept as a test so it cannot quietly come back.
+        """The gotcha, kept as a test so it cannot come back unnoticed.
 
         Postgres skips a table's policies for its owner unless the table is declared
         FORCE ROW LEVEL SECURITY. An application that connects as the owner, which is
