@@ -1,7 +1,7 @@
 """Connector semantics: consistent snapshots followed by ordered change events.
 
 A first crawl and an incremental feed look like two features. They are one protocol,
-and the seam between them is where corpora quietly go wrong:
+and the seam between them is where corpora go wrong unnoticed:
 
 1. capture the source high-watermark;
 2. read a snapshot at that same logical instant;
