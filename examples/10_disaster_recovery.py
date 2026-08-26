@@ -1,7 +1,7 @@
 """
 Lesson 10: restore authoritative data, rebuild derivatives, resume from CDC.
 
-This is where the dive's one big idea pays for itself:
+Disaster recovery follows directly from the dive's one big idea:
 
     A retrieval index is a disposable, derived view of authoritative source data.
 
