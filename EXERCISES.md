@@ -7,7 +7,7 @@ Do each exercise in this order:
 3. make the requested change;
 4. explain the result in terms of a production invariant.
 
-The goal is not to memorize APIs. It is to learn which data failure each control
+The goal isn't to memorize APIs. It's to learn which data failure each control
 prevents.
 
 ## 1. Data contracts
@@ -37,7 +37,7 @@ python examples/02_connectors_and_cursors.py
 - Predict which events appear after cursor 1.
 - Start changes at cursor 0. Which record is duplicated?
 - Start at cursor 2. Which record can be lost?
-- Request pages of size 1, crash after applying the first event, and do not persist
+- Request pages of size 1, crash after applying the first event, and don't persist
   the new cursor. Explain why replay safety belongs in the sink as well as the
   connector.
 
@@ -55,10 +55,10 @@ python examples/03_parsing_and_ocr.py
 - Change normalization so CRLF and LF hash differently. What unnecessary work does
   that create?
 - Add a `<script>` block to the HTML fixture whose body reads like an instruction to
-  an assistant. Confirm it is not in the parsed text, then remove `script` from
+  an assistant. Confirm it isn't in the parsed text, then remove `script` from
   `_NON_CONTENT` and confirm it is. Name the two separate costs of indexing it.
 - Give the HTML an unclosed `<script>` tag before the body text. Explain why the run
-  now fails rather than indexing a truncated document, and why that is the right
+  now fails rather than indexing a truncated document, and why that's the right
   outcome.
 
 ## 4. Deduplication and provenance
@@ -71,7 +71,7 @@ python examples/04_dedup_and_provenance.py
 
 - Predict which IDs are equal and which differ.
 - Give the Beta document a different ACL while keeping identical bytes. Verify that
-  the embedding is reused but its derived chunk ACL is not.
+  the embedding is reused but its derived chunk ACL isn't.
 - Remove `tenant_id` from `document_id()`. Write the failing isolation test first.
 - Decide which caches may be global by content hash and which must remain tenant or
   document scoped.
@@ -118,7 +118,7 @@ python examples/07_batches_and_backfills.py
 - Change the embedding model name and rerun the backfill. Why must the cache miss?
 - Delete a document, then run a backfill whose snapshot still contains it at the
   deleted version. Predict the status first. Then edit `InMemoryCatalog._may_replace`
-  to drop its `not previous.deleted` clause and run it again. You have just
+  to drop its `not previous.deleted` clause and run it again. You've just
   reintroduced a bug this repository shipped twice; write the one-sentence rule that
   prevents both versions of it.
 
@@ -152,7 +152,7 @@ python examples/09_lineage_and_quality.py
 - Remove a document from `catalog.documents` while leaving its chunks in place, then
   run the gate. It reports a failure rather than raising, because it used to raise on
   exactly the state the reconciler exists to find. Explain what an operator sees when
-  a gate crashes instead of failing, and why that is worse than either outcome.
+  a gate crashes instead of failing, and why that's worse than either outcome.
 
 ## 10. Disaster recovery
 
@@ -229,4 +229,4 @@ docker compose down
 Your final artifact should state the data contract, checkpoint rule, idempotency
 key, version semantics, deletion semantics, ACL source, quality gates, RPO, RTO, and
 measured filtered-recall target. If any one is only "whatever the code currently
-does," the pipeline is not yet operable at senior level.
+does," the pipeline isn't yet operable at senior level.
