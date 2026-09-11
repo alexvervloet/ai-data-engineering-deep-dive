@@ -32,7 +32,7 @@ make before running it.
 
 ---
 
-## What you will build
+## What you'll build
 
 The path follows a document through its complete lifecycle:
 
@@ -90,7 +90,7 @@ python -m unittest discover -v
 ```
 
 The deterministic hash embedder preserves the production control flow, meaning batching,
-cache keys, dimensions, atomic writes, and filtered search, and it is deliberately not a
+cache keys, dimensions, atomic writes, and filtered search, and it's deliberately not a
 semantic model. It keeps the data-engineering lesson local and repeatable.
 
 ---
@@ -101,7 +101,7 @@ semantic model. It keeps the data-engineering lesson local and repeatable.
 python examples/01_data_contracts.py
 ```
 
-A type hint, or a schema you showed to another system, is not enforcement. The boundary has
+A type hint, or a schema you showed to another system, isn't enforcement. The boundary has
 to reject unknown fields, unsupported MIME types, naive timestamps, oversized content,
 invalid tenant identifiers, and empty ACLs before any state changes.
 
@@ -117,7 +117,7 @@ trusted source or session context. Never accept a tenant selected by model outpu
 python examples/02_connectors_and_cursors.py
 ```
 
-A full crawl and an incremental feed are not two separate conveniences. They form one
+A full crawl and an incremental feed aren't two separate conveniences. They form one
 consistency protocol.
 
 1. capture a source high-watermark;
@@ -143,9 +143,9 @@ Text, Markdown, and HTML work locally. PDFs and images fail closed until you sup
 adapter. That boundary is deliberate. A pipeline must never index empty text, with nothing
 said about it, because an optional parser was missing.
 
-The HTML path also drops `script`, `style`, `template`, and `noscript` bodies. That
-is partly retrieval hygiene, since minified CSS makes poor context. It is also the
-ingest end of prompt injection: script text is arbitrary text on a page you did not
+The HTML path also drops `script`, `style`, `template`, and `noscript` bodies. That's
+partly retrieval hygiene, since minified CSS makes poor context. It's also the
+ingest end of prompt injection: script text is arbitrary text on a page you didn't
 write, and whatever the parser keeps eventually reaches a model's context window.
 
 ## 4. Deduplicate compute, never identity
@@ -155,7 +155,7 @@ python examples/04_dedup_and_provenance.py
 ```
 
 Two tenants can store the same bytes. Reusing parsing or embedding work by content hash is
-safe. Merging their document IDs, ACLs, source URIs, or lineage is not.
+safe. Merging their document IDs, ACLs, source URIs, or lineage isn't.
 
 The example shows equal blob IDs, distinct tenant-scoped document IDs, one reused embedding,
 and two lineage edges. Content-addressed work is an optimization. The authorization boundary
@@ -167,9 +167,9 @@ stays document-addressed.
 python examples/05_acl_propagation.py
 ```
 
-The source ACL gets copied onto each chunk and updated even when the content has not
+The source ACL gets copied onto each chunk and updated even when the content hasn't
 changed. The example revokes Alex's access without paying to embed the unchanged text
-again. It also proves that an Acme principal cannot retrieve the identically named Beta
+again. It also proves that an Acme principal can't retrieve the identically named Beta
 document.
 
 The safe query order runs like this.
@@ -209,7 +209,7 @@ conservative.
 
 A backfill re-runs current source state after a parser, chunker, or embedding-model
 migration. Equal source versions are permitted only in this explicit mode, and only
-for documents that are not deleted: a tombstone is lifted by a strictly newer source
+for documents that aren't deleted: a tombstone is lifted by a strictly newer source
 event or not at all. Otherwise a routine migration, run against a snapshot captured
 around a delete, republishes content the source removed. The example migrates one old
 chunk to six new chunks in three bounded calls, then replays the job with zero new
@@ -221,7 +221,7 @@ embedding calls.
 python examples/08_deletes_and_reconciliation.py
 ```
 
-Removing a vector is not enough. Without a versioned tombstone, an old retry can recreate
+Removing a vector isn't enough. Without a versioned tombstone, an old retry can recreate
 the deleted content. The example deliberately misses a delete event. Source-to-index
 reconciliation finds the orphan, the tombstone removes it, and a late v1 upsert stays
 stale.
@@ -236,7 +236,7 @@ everything not seen" run against an incomplete source snapshot.
 python examples/09_lineage_and_quality.py
 ```
 
-Retrieval evals cannot explain a stale or unauthorized corpus. The pipeline needs earlier
+Retrieval evals can't explain a stale or unauthorized corpus. The pipeline needs earlier
 gates.
 
 - source coverage and reconciliation drift;
@@ -265,7 +265,7 @@ Define and test both of these.
 - **RTO**: how long parsing, chunking, embedding, index creation, and reconciliation
   take at full corpus size.
 
-Back up only a vector table and you lose the evidence you would need to explain it, or to
+Back up only a vector table and you lose the evidence you'd need to explain it, or to
 rebuild it safely.
 
 ---
@@ -351,10 +351,10 @@ together.
 - HNSW uses cosine distance and iterative scans for filtered ANN queries;
 - the application query still includes tenant and ACL predicates explicitly;
 - searches run as an unprivileged reader role, so row-level security repeats the
-  check as defense in depth and the read path cannot reach the document table;
+  check as defense in depth and the read path can't reach the document table;
 - deletes cascade through chunks but retain the document tombstone.
 
-That reader role is not ceremony, and the reason behind it is the most useful thing in this
+That reader role isn't ceremony, and the reason behind it is the most useful thing in this
 section. Postgres exempts a table's owner from that table's row-level security policies
 unless the table is declared `FORCE ROW LEVEL SECURITY`. An application that connects as the
 role which ran its migrations, which is the common case, gets a policy that is present,
@@ -396,7 +396,7 @@ these joins without weakening their contracts.
 | local backup string | encrypted object storage, retention policy, restore drills, and immutable audit evidence |
 | one HNSW index | measured exact/ANN recall, tenant partitioning, vacuum/reindex plans, capacity tests, and replicas |
 
-Do not add concurrency until you have tested the idempotency, versioning, and transaction
+Don't add concurrency until you've tested the idempotency, versioning, and transaction
 semantics. Parallelizing an unsafe lifecycle only makes corruption arrive faster.
 
 ---
