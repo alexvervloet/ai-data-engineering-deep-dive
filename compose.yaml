@@ -1,6 +1,10 @@
+# Bumping the image tag doesn't upgrade a database that already exists: the volume
+# keeps the vector extension at the version it was created with. After a bump, run
+# once: docker compose exec postgres psql -U ai_data -d ai_data -c "ALTER EXTENSION vector UPDATE"
+# or start clean with `docker compose down -v`.
 services:
   postgres:
-    image: pgvector/pgvector:0.8.6-pg18
+    image: pgvector/pgvector:0.8.7-pg18
     environment:
       POSTGRES_DB: ai_data
       POSTGRES_USER: ai_data
